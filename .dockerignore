@@ -1,0 +1,23 @@
+# Version control
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Environments
+.env
+venv/
+env/
+
+# Data folders (generated)
+crawl/
+crawl_archive/
+ImageBatches/
+generated_prompts.txt
+
+# Local specific files
+vincent-464803-ed8aaf9f590f.json
