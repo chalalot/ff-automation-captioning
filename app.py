@@ -10,6 +10,16 @@ sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 from src.workflows.image_to_prompt_workflow import ImageToPromptWorkflow
 
+# Import Scripts for Buttons
+try:
+    from scripts.queue_prompts_from_archive import main as run_queue_script
+    from scripts.populate_generated_images import main as run_populate_script
+except ImportError:
+    # Fallback if running from a different context where scripts module isn't resolvable directly
+    sys.path.append(os.path.join(os.path.dirname(__file__), 'scripts'))
+    from scripts.queue_prompts_from_archive import main as run_queue_script
+    from scripts.populate_generated_images import main as run_populate_script
+
 # Page Config
 st.set_page_config(page_title="CrewAI Image Workflow", layout="wide")
 
@@ -22,7 +32,13 @@ kol_persona = st.sidebar.text_input("KOL Persona", value="Jennie")
 
 # Constants
 CRAWL_DIR = "crawl"
+READY_DIR = "ready"
 ARCHIVE_DIR = "crawl_archive"
+
+# Ensure directories exist
+os.makedirs(CRAWL_DIR, exist_ok=True)
+os.makedirs(READY_DIR, exist_ok=True)
+os.makedirs(ARCHIVE_DIR, exist_ok=True)
 
 # Ensure directories exist
 os.makedirs(CRAWL_DIR, exist_ok=True)
@@ -55,9 +71,12 @@ with tab1:
             
             st.success(f"Saved {len(uploaded_files)} images to {CRAWL_DIR}/")
 
-    # --- 2. Captioning Workflow Section ---
-    st.header("2. Captioning Flow")
+    # --- 2. Generation Flow Section ---
+    st.header("2. Generation Flow")
 
+    # Step 1: Captioning (Generate Prompts)
+    st.subheader("Step 1: Generate Prompts")
+    
     async def run_captioning():
         workflow = ImageToPromptWorkflow(verbose=True)
         results = []
@@ -90,30 +109,20 @@ with tab1:
                 )
                 
                 generated_prompt = result["generated_prompt"]
-                descriptive_prompt = result.get("descriptive_prompt", "")
                 
-                # --- Archiving Logic ---
+                # --- New Logic: Save to Ready Folder ---
                 base_name = os.path.splitext(filename)[0]
 
-                # 1. Save Keyword Prompt to Text File
+                # Save Prompt to Ready Folder
                 text_filename = f"{base_name}.txt"
-                text_path = os.path.join(ARCHIVE_DIR, text_filename)
+                text_path = os.path.join(READY_DIR, text_filename)
                 with open(text_path, "w", encoding="utf-8") as f:
                     f.write(generated_prompt)
                 
-                # 2. Save Descriptive Prompt to Text File
-                desc_filename = f"{base_name}_description.txt"
-                desc_path = os.path.join(ARCHIVE_DIR, desc_filename)
-                with open(desc_path, "w", encoding="utf-8") as f:
-                    f.write(descriptive_prompt)
-
-                # 3. Move Image to Archive
-                archive_image_path = os.path.join(ARCHIVE_DIR, filename)
-                # Handle duplicates if necessary (simple overwrite here as per usual crawl logic)
-                shutil.move(image_path, archive_image_path)
+                # We leave the original image in CRAWL_DIR for now, 
+                # as the populate script expects it there (or in CRAWL_DIR) to move it later.
                 
-                # Update result to point to new location for display in this session
-                result["reference_image"] = archive_image_path
+                result["reference_image"] = image_path
                 results.append(result)
                 
             except Exception as e:
@@ -121,19 +130,51 @@ with tab1:
                 
             progress_bar.progress((i + 1) / len(image_files))
             
-        status_text.text("Captioning & Archiving Complete!")
+        status_text.text("Captioning Complete! Prompts saved to 'ready' folder.")
         return results
 
-    if st.button("Start Captioning"):
-        with st.spinner("Running CrewAI Workflow..."):
-            # Run async function in event loop
+    if st.button("Generate Prompts (Step 1)"):
+        with st.spinner("Generating Prompts..."):
             st.session_state.results = asyncio.run(run_captioning())
-            st.success("Captioning finished! Files moved to Archive.")
+            st.success("Prompts generated and saved to 'ready'.")
+
+    # Step 2: Queue Generation
+    st.subheader("Step 2: Queue Image Generation")
+    st.markdown("Reads prompts from `ready` folder and queues them in ComfyUI.")
+    
+    if st.button("Queue Generation (Step 2)"):
+        with st.spinner("Queueing prompts..."):
+            try:
+                # Use asyncio.run to execute the async main function of the script
+                asyncio.run(run_queue_script())
+                st.success("Generation queued! Check terminal for details.")
+            except Exception as e:
+                st.error(f"Failed to queue generation: {e}")
+
+    # Step 3: Populate Results
+    st.subheader("Step 3: Populate & Archive Results")
+    st.markdown("Checks status of queued generations. Downloads completed images and moves everything to `archive`.")
+    
+    if st.button("Populate Results (Step 3)"):
+        with st.spinner("Checking status and downloading..."):
+            try:
+                asyncio.run(run_populate_script())
+                st.success("Completed results populated to Archive!")
+                
+                # Clear session results as files have been moved to archive
+                st.session_state.results = []
+                st.rerun() # Refresh to show new items in Archive tab
+            except Exception as e:
+                st.error(f"Failed to populate results: {e}")
 
     # Display Results (Current Session)
     if st.session_state.results:
         st.subheader("Session Results")
         for idx, item in enumerate(st.session_state.results):
+            # Check if file still exists (it might have been moved/archived)
+            if not os.path.exists(item["reference_image"]):
+                continue
+
             col1, col2 = st.columns([1, 2])
             with col1:
                 st.image(item["reference_image"], caption=os.path.basename(item["reference_image"]), width='content')
@@ -152,39 +193,66 @@ with tab2:
     # List all images in archive
     valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
     if os.path.exists(ARCHIVE_DIR):
-        archive_files = [f for f in os.listdir(ARCHIVE_DIR) if f.lower().endswith(valid_exts)]
-        archive_files.sort(key=lambda x: os.path.getmtime(os.path.join(ARCHIVE_DIR, x)), reverse=True) # Newest first
+        all_files = os.listdir(ARCHIVE_DIR)
         
-        if not archive_files:
+        # Filter for Reference Images (exclude _generated ones)
+        ref_images = [
+            f for f in all_files 
+            if f.lower().endswith(valid_exts) and "_generated" not in f
+        ]
+        
+        # Sort by modification time (newest first)
+        ref_images.sort(key=lambda x: os.path.getmtime(os.path.join(ARCHIVE_DIR, x)), reverse=True)
+        
+        if not ref_images:
             st.info("Archive is empty.")
         else:
-            st.write(f"Found {len(archive_files)} archived images.")
+            st.write(f"Found {len(ref_images)} archive entries.")
             
-            for filename in archive_files:
-                col1, col2 = st.columns([1, 2])
+            for filename in ref_images:
+                # Layout: Ref Image | Prompt & Desc | Generated Image
+                col1, col2, col3 = st.columns([1, 1.5, 1])
                 
-                image_path = os.path.join(ARCHIVE_DIR, filename)
                 base_name = os.path.splitext(filename)[0]
+                
+                # Paths
+                ref_image_path = os.path.join(ARCHIVE_DIR, filename)
                 text_path = os.path.join(ARCHIVE_DIR, f"{base_name}.txt")
                 desc_path = os.path.join(ARCHIVE_DIR, f"{base_name}_description.txt")
                 
+                # Find Generated Image (could be any valid extension)
+                gen_image_path = None
+                for ext in valid_exts:
+                    possible_gen = os.path.join(ARCHIVE_DIR, f"{base_name}_generated{ext}")
+                    if os.path.exists(possible_gen):
+                        gen_image_path = possible_gen
+                        break
+
+                # 1. Reference Image
                 with col1:
-                    st.image(image_path, caption=filename, width='content')
+                    st.image(ref_image_path, caption=f"Ref: {filename}", width='content')
                 
+                # 2. Prompts
                 with col2:
                     # Keyword Prompt
                     prompt_text = "No prompt file found."
                     if os.path.exists(text_path):
                         with open(text_path, "r", encoding="utf-8") as f:
                             prompt_text = f.read()
-                    st.text_area("Keyword Prompt", prompt_text, height=100, key=f"archive_prompt_{filename}")
+                    st.text_area("Keyword Prompt", prompt_text, height=150, key=f"archive_prompt_{filename}")
                     
-                    # Descriptive Prompt
-                    desc_text = "No description file found."
+                    # Descriptive Prompt (if exists)
                     if os.path.exists(desc_path):
                         with open(desc_path, "r", encoding="utf-8") as f:
                             desc_text = f.read()
-                    st.text_area("Descriptive Prompt", desc_text, height=100, key=f"archive_desc_{filename}")
+                        st.text_area("Descriptive Prompt", desc_text, height=100, key=f"archive_desc_{filename}")
+                
+                # 3. Generated Image
+                with col3:
+                    if gen_image_path:
+                        st.image(gen_image_path, caption=f"Generated: {os.path.basename(gen_image_path)}", width='content')
+                    else:
+                        st.info("No generated image yet.")
                 
                 st.divider()
     else:

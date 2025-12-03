@@ -1,0 +1,361 @@
+{
+    "status": 200,
+    "message": "Workflow retrieved successfully",
+    "data": {
+        "_id": "82892890-19b4-4c3c-9ea9-5e004afd3343",
+        "name": "Instagirlv2.5_workflow_no_gguf",
+        "description": "Auto-imported workflow: Instagirlv2.5_workflow_no_gguf",
+        "metadata": {
+            "auto_imported": true,
+            "category": "image-generation",
+            "default": true
+        },
+        "json_content": {
+            "3": {
+                "inputs": {
+                    "text": "<lora:jennie>, Instagirl, the girl (22-23 years old), seated elegantly leaning forward, serene contemplative gaze, soft peaceful expression, wearing pastel-colored off-the-shoulder dress, flowing fabric, ruffled details, garden setting with lush greenery and flowers, bubbles present, soft warm lighting, dreamy vintage atmosphere, honey-blonde hair tied in a half-up bun, loose face-framing strands, realistic skin, creamy warm tone, deep shadows, high contrast, fine film grain, 35mm lens, daily realistic photography",
+                    "clip": [
+                        "68",
+                        1
+                    ]
+                },
+                "class_type": "CLIPTextEncode",
+                "_meta": {
+                    "title": "Positive Prompt"
+                }
+            },
+            "4": {
+                "inputs": {
+                    "text": "3 hands, plastic smoothing, 色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走, censored, sunburnt skin, rashy skin, red cheeks, pouty face, duckbil face",
+                    "clip": [
+                        "68",
+                        1
+                    ]
+                },
+                "class_type": "CLIPTextEncode",
+                "_meta": {
+                    "title": "Negative Prompt"
+                }
+            },
+            "5": {
+                "inputs": {
+                    "width": 1088,
+                    "height": 1488,
+                    "length": 1,
+                    "batch_size": 1
+                },
+                "class_type": "EmptyHunyuanLatentVideo",
+                "_meta": {
+                    "title": "EmptyHunyuanLatentVideo"
+                }
+            },
+            "8": {
+                "inputs": {
+                    "vae_name": "wan_2.1_vae.safetensors"
+                },
+                "class_type": "VAELoader",
+                "_meta": {
+                    "title": "Load VAE"
+                }
+            },
+            "9": {
+                "inputs": {
+                    "samples": [
+                        "36",
+                        0
+                    ],
+                    "vae": [
+                        "8",
+                        0
+                    ]
+                },
+                "class_type": "VAEDecode",
+                "_meta": {
+                    "title": "VAE Decode"
+                }
+            },
+            "10": {
+                "inputs": {
+                    "filename_prefix": "Trung/ComfyUI",
+                    "images": [
+                        "9",
+                        0
+                    ]
+                },
+                "class_type": "SaveImage",
+                "_meta": {
+                    "title": "Save Image"
+                }
+            },
+            "22": {
+                "inputs": {
+                    "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+                    "type": "wan",
+                    "device": "default"
+                },
+                "class_type": "CLIPLoader",
+                "_meta": {
+                    "title": "Load CLIP"
+                }
+            },
+            "35": {
+                "inputs": {
+                    "add_noise": "enable",
+                    "noise_seed": [
+                        "67",
+                        0
+                    ],
+                    "steps": 10,
+                    "cfg": 1,
+                    "sampler_name": "res_2s",
+                    "scheduler": "beta57",
+                    "start_at_step": 0,
+                    "end_at_step": 4,
+                    "return_with_leftover_noise": "disable",
+                    "model": [
+                        "100",
+                        0
+                    ],
+                    "positive": [
+                        "3",
+                        0
+                    ],
+                    "negative": [
+                        "4",
+                        0
+                    ],
+                    "latent_image": [
+                        "5",
+                        0
+                    ]
+                },
+                "class_type": "KSamplerAdvanced",
+                "_meta": {
+                    "title": "KSampler (Advanced)"
+                }
+            },
+            "36": {
+                "inputs": {
+                    "add_noise": "enable",
+                    "noise_seed": [
+                        "67",
+                        0
+                    ],
+                    "steps": 10,
+                    "cfg": 1,
+                    "sampler_name": "res_2s",
+                    "scheduler": "beta57",
+                    "start_at_step": 4,
+                    "end_at_step": 999,
+                    "return_with_leftover_noise": "disable",
+                    "model": [
+                        "103",
+                        0
+                    ],
+                    "positive": [
+                        "3",
+                        0
+                    ],
+                    "negative": [
+                        "4",
+                        0
+                    ],
+                    "latent_image": [
+                        "35",
+                        0
+                    ]
+                },
+                "class_type": "KSamplerAdvanced",
+                "_meta": {
+                    "title": "KSampler (Advanced)"
+                }
+            },
+            "67": {
+                "inputs": {
+                    "seed": 635116899623699
+                },
+                "class_type": "Seed Generator",
+                "_meta": {
+                    "title": "Seed Generator"
+                }
+            },
+            "68": {
+                "inputs": {
+                    "lora_name": "persona/WAN2.2-JennieV3_HighNoise_KhiemLe.safetensors",
+                    "strength_model": 4,
+                    "strength_clip": 1,
+                    "model": [
+                        "104",
+                        0
+                    ],
+                    "clip": [
+                        "22",
+                        0
+                    ]
+                },
+                "class_type": "LoraLoader",
+                "_meta": {
+                    "title": "Load LoRA"
+                }
+            },
+            "70": {
+                "inputs": {
+                    "lora_name": "wan2.2_t2v_lightx2v_4steps_lora_v1.1_low_noise.safetensors",
+                    "strength_model": 0.6000000000000001,
+                    "model": [
+                        "105",
+                        0
+                    ]
+                },
+                "class_type": "LoraLoaderModelOnly",
+                "_meta": {
+                    "title": "LoraLoaderModelOnly"
+                }
+            },
+            "71": {
+                "inputs": {
+                    "lora_name": "persona/WAN2.2-JennieV3_LowNoise_KhiemLe.safetensors",
+                    "strength_model": 0.8,
+                    "model": [
+                        "70",
+                        0
+                    ]
+                },
+                "class_type": "LoraLoaderModelOnly",
+                "_meta": {
+                    "title": "LoraLoaderModelOnly"
+                }
+            },
+            "72": {
+                "inputs": {
+                    "lora_name": "lenovo.safetensors",
+                    "strength_model": 0.6000000000000001,
+                    "model": [
+                        "71",
+                        0
+                    ]
+                },
+                "class_type": "LoraLoaderModelOnly",
+                "_meta": {
+                    "title": "LoraLoaderModelOnly"
+                }
+            },
+            "100": {
+                "inputs": {
+                    "backend": "inductor",
+                    "fullgraph": false,
+                    "mode": "default",
+                    "dynamic": false,
+                    "compile_transformer_blocks_only": true,
+                    "dynamo_cache_size_limit": 64,
+                    "model": [
+                        "68",
+                        0
+                    ]
+                },
+                "class_type": "TorchCompileModelWanVideoV2",
+                "_meta": {
+                    "title": "TorchCompileModelWanVideoV2"
+                }
+            },
+            "103": {
+                "inputs": {
+                    "backend": "inductor",
+                    "fullgraph": false,
+                    "mode": "default",
+                    "dynamic": false,
+                    "compile_transformer_blocks_only": true,
+                    "dynamo_cache_size_limit": 64,
+                    "model": [
+                        "72",
+                        0
+                    ]
+                },
+                "class_type": "TorchCompileModelWanVideoV2",
+                "_meta": {
+                    "title": "TorchCompileModelWanVideoV2"
+                }
+            },
+            "104": {
+                "inputs": {
+                    "unet_name": "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
+                    "weight_dtype": "default"
+                },
+                "class_type": "UNETLoader",
+                "_meta": {
+                    "title": "Load Diffusion Model"
+                }
+            },
+            "105": {
+                "inputs": {
+                    "unet_name": "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
+                    "weight_dtype": "default"
+                },
+                "class_type": "UNETLoader",
+                "_meta": {
+                    "title": "Load Diffusion Model"
+                }
+            },
+            "106": {
+                "inputs": {
+                    "bucket_name": "soulie-gcp-bucket",
+                    "bucket_path": "comfyui",
+                    "file_name": "my_image.png",
+                    "gcp_service_json": "/app/secrets/soulie-gcp-bucket.json",
+                    "images": [
+                        "9",
+                        0
+                    ]
+                },
+                "class_type": "GCPWriteImageNode",
+                "_meta": {
+                    "title": "GCP: Write Images"
+                }
+            },
+            "109": {
+                "inputs": {
+                    "preview": "",
+                    "source": [
+                        "106",
+                        1
+                    ]
+                },
+                "class_type": "PreviewAny",
+                "_meta": {
+                    "title": "Preview Any"
+                }
+            }
+        },
+        "overwritable_inputs": {
+            "positive_prompt": {
+                "field": "3.inputs.text",
+                "dtype": "str"
+            },
+            "negative_prompt": {
+                "field": "4.inputs.text",
+                "dtype": "str"
+            },
+            "width": {
+                "field": "5.inputs.width",
+                "dtype": "int"
+            },
+            "height": {
+                "field": "5.inputs.height",
+                "dtype": "int"
+            },
+            "persona_high_lora_name": {
+                "field": "68.inputs.lora_name",
+                "dtype": "str"
+            },
+            "persona_low_lora_name": {
+                "field": "71.inputs.lora_name",
+                "dtype": "str"
+            }
+        },
+        "seed_fields": [
+            "67.inputs.seed"
+        ],
+        "created_at": 1761726985.53074,
+        "last_update": 1764581341.510023
+    }
+}

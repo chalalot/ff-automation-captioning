@@ -15,7 +15,7 @@ Features:
 import os
 import re
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -141,6 +141,37 @@ def get_public_url(gcs_path: str, bucket_name: str = GCS_BUCKET_NAME) -> str:
         Public URL for the object
     """
     return f"https://storage.googleapis.com/{bucket_name}/{gcs_path}"
+
+
+def generate_signed_url(
+    gcs_path: str,
+    bucket_name: str = GCS_BUCKET_NAME,
+    expiration_minutes: int = 60
+) -> str:
+    """
+    Generate a signed URL for a GCS object.
+    
+    Args:
+        gcs_path: Path to the object in GCS
+        bucket_name: GCS bucket name
+        expiration_minutes: URL expiration time in minutes
+        
+    Returns:
+        Signed URL if successful, else Public URL
+    """
+    try:
+        client = _get_gcs_client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(gcs_path)
+        
+        return blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(minutes=expiration_minutes),
+            method="GET"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to generate signed URL for {gcs_path}, falling back to public URL: {e}")
+        return get_public_url(gcs_path, bucket_name)
 
 
 def _get_gcs_client() -> storage.Client:
@@ -330,6 +361,70 @@ def upload_campaign_image(
         error_msg = f"Failed to upload campaign image: {e}"
         logger.error(error_msg)
         raise GCSUploadError(error_msg)
+
+
+def list_gcs_images(
+    prefix: str = "",
+    bucket_name: str = GCS_BUCKET_NAME
+) -> list:
+    """
+    List all images in a specific GCS folder prefix.
+
+    Args:
+        prefix: Folder prefix (e.g., 'comfy_ui/', 'Trung/')
+        bucket_name: GCS bucket name
+
+    Returns:
+        List of dicts with blob metadata: {
+            'name': str,           # Full path
+            'public_url': str,     # Public URL
+            'size': int,           # Size in bytes
+            'updated': datetime,   # Last updated timestamp
+            'content_type': str    # MIME type
+        }
+
+    Raises:
+        GCSClientError: If listing fails
+    """
+    try:
+        client = _get_gcs_client()
+        bucket = client.bucket(bucket_name)
+
+        blobs = bucket.list_blobs(prefix=prefix)
+
+        images = []
+        for blob in blobs:
+            # Skip directory markers
+            if blob.name.endswith('/'):
+                continue
+
+            # Generate signed URL for each image
+            try:
+                signed_url = blob.generate_signed_url(
+                    version="v4",
+                    expiration=timedelta(minutes=60),
+                    method="GET"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to generate signed URL for {blob.name}: {e}")
+                signed_url = get_public_url(blob.name, bucket_name)
+
+            images.append({
+                'name': blob.name,
+                'public_url': get_public_url(blob.name, bucket_name),
+                'signed_url': signed_url,
+                'size': blob.size,
+                'updated': blob.updated,
+                'content_type': blob.content_type or 'unknown'
+            })
+
+        logger.debug(f"Found {len(images)} images in prefix '{prefix}'")
+        return images
+
+    except Exception as e:
+        error_msg = f"Failed to list images with prefix '{prefix}': {e}"
+        logger.error(error_msg)
+        raise GCSClientError(error_msg)
 
 
 def list_campaign_images(

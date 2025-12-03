@@ -108,9 +108,9 @@ class GlobalConfig:
         GCS_CREDENTIALS_JSON = st.secrets.get("GCS_CREDENTIALS")  # JSON string from secrets
     else:
         # Fall back to environment variables
-        GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "vudx-bucket")
+        GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "soulie-gcp-bucket")
         GCS_CREDENTIALS_PATH = os.getenv("GCS_CREDENTIALS_PATH", "vincent-464803-ed8aaf9f590f.json")
-        GCS_PUBLIC_BASE_URL = os.getenv("GCS_PUBLIC_BASE_URL", "https://storage.googleapis.com/vudx-bucket")
+        GCS_PUBLIC_BASE_URL = os.getenv("GCS_PUBLIC_BASE_URL", "https://storage.googleapis.com/soulie-gcp-bucket")
         GCS_CREDENTIALS_JSON = os.getenv("GCS_CREDENTIALS")  # JSON string from env var
 
     #S3

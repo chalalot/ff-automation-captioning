@@ -1,25 +1,21 @@
-# Use an official Python runtime as a parent image
-FROM python:3.10-slim
+# 1. Pick a Python version (just like you have Python installed on your laptop)
+FROM python:3.11-slim
 
-# Set the working directory in the container
+# 2. Create a folder inside the container to hold your app
 WORKDIR /app
 
-# Copy the requirements file into the container at /app
+# 3. Copy only requirements first (this optimizes build speed)
 COPY requirements.txt .
 
-# Install any needed packages specified in requirements.txt
-# Note: --no-cache-dir helps keep the image size down
+# 4. Run the install command (Your step 1)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the current directory contents into the container at /app
+# 5. Copy the rest of your app code into the container
 COPY . .
 
-# Make port 8501 available to the world outside this container
+# 6. Tell Docker that this app will listen on port 8501
 EXPOSE 8501
 
-# Define environment variable for Streamlit to run in headless mode
-ENV STREAMLIT_SERVER_HEADLESS=true
-ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
-
-# Run app.py when the container launches
-CMD ["streamlit", "run", "app.py"]
+# 7. The command to start the app (Your step 2)
+# IMPORTANT: You must add --server.address=0.0.0.0 so it listens to the outside world
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]

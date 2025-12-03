@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "vincent-464803",
+  "private_key_id": "a454ef20df23bd54c4737acadd41a27d3c8b61df",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQClSBCFEF7w4w8E\n7wHGOybM8ROYWzAB7GidclKs/pTfH06+Fcl31EnJHlIGYUgynbMEYQX+Dw68rkR9\nGcMSHDueYMfn7dyl54A48EI4BWBk7GMHGtl9yCIBfbBzSQalCQ0hj7AfinyaZkrp\nOSD36AiMCgGRv6ZNXhCRGdU98JsSEGwcttZY9OpXkoQF4eldWHHl36V5NMg42z7i\nU28mTvogp5dP3r5s5lDU7M2Au9Lg5gXpnEiUufBi7XtWOjl9okxSO1AuLocPeRrl\ncEblV1B/y+w53No3HqDsh3lsI57ryzOIOErp3xl3viMqE/0Q/vVtq73L4mAAce7N\n/Eb1m4btAgMBAAECggEAD5T4LbtJ4Bbf6xynQ6t+8HJH4SSzpXLGuBU3kySbH1/h\nugzuxfPHEwVfQUe5mUAByQdmm7mKr6IUReEAYXw06K0CG6zykNd+4J9R9tsW59zb\nRyeyWmfcQNy7HltDm5p7WO8lcQvKzHmZVVxz7bs71wv4cuepA4E7OZrAXksJK44m\n/of3PpSqBufIqV6lc70bjrO5Gb77ZwmnPmdLj7Pi6TclMMPBMVy1bmTK4uwm+BTN\nTvm1yLpxWALSuD2UMb0aQZnxsbOfOWnKETlrAXwLu8HV56F4e7sNX+DZONuaj62K\nzU7bY3/S2YcBb+K0Ow5uOAjMuCXZ2shTqAoTyOjulwKBgQDTTUji8TZUDU4dqALs\nkXtGaSp9Ht/dqnQUmDZX211pny+3aqlp0bHPR7yqKmFxYLwa589OvtDnZizPSK8k\nVZ0jzP+O/Yz40Mek0+VrkJs1IQNLK3f/AFPe4g0hmPjVUoYMyHTlgrKFXGjpzpkF\n+r6O/pmIh6/WszsV3YBd8/l2GwKBgQDIPp6KneG9RtC2njSOW9g6GbsckPA0aVvS\nQrdPT8XYzcmQzTMYRgVXjczfC5AlXscFBB7Gz+nm+M86AM+IyRUhnPzN3NvwcSjF\nb07kaLl8z3s5Q/PcbZD5URfJwoSUDecOOfIQOH1sK6n1Q9trMebuxh+KEDHfj8qK\nnSvYo/ZnlwKBgFhRyHJbQksVmJ4auMYq9Oz0TjcoLYhYk9Z73NMSNNROHkK7CX7a\nkEjEgl5aAorCVT2lwOf4KBdghMBLcDFuu5TYPcWFw2PI2HnTu+Qe+FDXsKm9zJVA\njM3vjG+Log6ARNmY/Atmern1a0C3Aw0Vxoq8bm470Mqb9clo4RvkO1QbAoGAZ00u\nmtICD5QFvf/1mu80qBx4E6+Ny2wC64Bxcp/zr/nRnzrMvhv5S4aihvo/HZg8UZEj\nk2rU/suilAixB568oP+Mx2LFr8+gueHHMDv6XLHons04c6GuZX/5JqOLo5lcdlFc\nWBPcWD5aSmX8Ptuah9l7kczy/aL/WOzmHrfPOPcCgYAJokfX45E3/bg3EoEreJW5\n+oZSgVZ82AtY/Ydn/Zg8QKV5wTYCnsVUBVCu0M8K1ue6JUfUgt0qy0feOPBd+Zk0\nOpskvRvrLQXDAjiVK3tY7dTq6RBVltKxrgOGuU+FJxacObqKHfvp0hDWu0y+Z0Hm\n1aWJ6FAlcQ5OOhYLmEfVug==\n-----END PRIVATE KEY-----\n",
+  "client_email": "soulie-gcp-bucket@vincent-464803.iam.gserviceaccount.com",
+  "client_id": "107864035640747632489",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/soulie-gcp-bucket%40vincent-464803.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

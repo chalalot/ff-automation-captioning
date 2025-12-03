@@ -17,7 +17,6 @@ class ImageToPromptWorkflow:
 
     HAIRSTYLES = [
         "long honey-blonde hair tied in a half-up bun with loose face-framing strands",
-        "long honey-blonde hair styled in thick wavy twin ponytails",
         "thick and very long honey blonde hair with hippie style",
         "thick and very long honey blonde hair with loose waves",
         "long blonde hair messy bun with loose front strands"
@@ -112,10 +111,10 @@ class ImageToPromptWorkflow:
         generate_prompt_task = Task(
             description=f"""
             Create a final Image Generation Prompt based on the analysis.
-            
+             
             **MANDATORY RULES:**
             1. **Prefix**: Start with "<lora:{persona_name.lower()}>, Instagirl," (Adjust trigger word if needed for other personas).
-            2. **Subject**: "the girl (22-23 years old)"
+            2. **Subject**: "the girl (22-23 years old), visible cleavage"
             3. **Hairstyle**: CHOOSE EXACTLY ONE from this list (do not modify):
                {self.HAIRSTYLES}
             4. **Length Constraint**: The final output MUST be between 700 and 800 characters long. To achieve this, provide VERY detailed descriptions of the outfit, textures, background, lighting, and atmosphere, while maintaining the comma-separated keyword format.

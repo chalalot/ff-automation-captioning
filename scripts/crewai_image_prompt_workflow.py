@@ -59,7 +59,7 @@ def create_prompt_engineer_agent() -> Agent:
         goal='Convert visual descriptions into strict Instagirl WAN2.2 keyword prompts.',
         backstory="""You are a specialist in prompting for the Instagirl WAN2.2 model.
         You know exactly how to format prompts for maximum realism:
-        - You ALWAYS use the prefix: "<lora:jennie>, Instagirl", do not remove the "<>" wrappers.
+        - You ALWAYS use the prefix: "<lora:jennie>, Instagirl, visible cleavage", do not remove the "<>" wrappers.
         - You writes CONCISE, comma-separated keywords.
         - You NEVER use full sentences, bullet points, or line breaks.
         - You always enforce specific client overrides (like hairstyle) regardless of the input image.
@@ -158,7 +158,7 @@ def process_single_image(image_path: str, analyst: Agent, engineer: Agent):
         - **Subject:** "the girl (22-23 years old)"
         
         **STYLE & FORMATTING RULES:**
-        1. **Prefix:** Start with `<lora:jennie>, Instagirl,`
+        1. **Prefix:** Start with `<lora:jennie>, Instagirl, visible cleavage`
         2. **Format:** Comma-separated keywords ONLY. No sentences. No line breaks.
         3. **Tone:** Affirmative, concise, focused.
         4. **Technical Quality Keywords to Include:** 
@@ -169,7 +169,7 @@ def process_single_image(image_path: str, analyst: Agent, engineer: Agent):
         - Ensure specific details like "hand holding a tomato" or "resting on bed" (from example) are adapted if present in the NEW reference image, otherwise use the actual details from the analyzed image.
         
         **Example of desired style:**
-        "<lora:jennie>, Instagirl, high-angle close-up, the girl (22-23 years old), reclining on beige bed, neutral pastel indoor, long honey-blonde hair tied in a half-up bun, loose face-framing strands, dreamy soft gaze, flushed soft expression, one hand holding a tomato close to lips, other hand resting on bed beside scattered cherry tomatoes, deep red outfit visible on shoulder, realistic skin, creamy warm tone, deep shadows, high contrast, fine film grain, 35mm lens, dreamy vintage atmosphere, daily realistic photography"
+        "<lora:jennie>, Instagirl, visible cleavage, high-angle close-up, the girl (22-23 years old), reclining on beige bed, neutral pastel indoor, long honey-blonde hair tied in a half-up bun, loose face-framing strands, dreamy soft gaze, flushed soft expression, one hand holding a tomato close to lips, other hand resting on bed beside scattered cherry tomatoes, deep red outfit visible on shoulder, realistic skin, creamy warm tone, deep shadows, high contrast, fine film grain, 35mm lens, dreamy vintage atmosphere, daily realistic photography"
         """,
         expected_output="A single, continuous text string containing the comma-separated keywords for the prompt.",
         agent=engineer,
