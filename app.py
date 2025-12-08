@@ -5,6 +5,7 @@ import asyncio
 import sys
 import zipfile
 import io
+import json
 from pathlib import Path
 
 # Add project root to path
@@ -189,6 +190,28 @@ with tab1:
 
 with tab2:
     st.header("🗂️ Archive Gallery")
+
+    # --- Persistence Logic ---
+    APPROVALS_FILE = os.path.join(ARCHIVE_DIR, "approvals.json")
+    
+    def save_approvals():
+        # Save all currently True approval keys
+        approvals = [k.replace("approve_", "") for k, v in st.session_state.items() if k.startswith("approve_") and v]
+        with open(APPROVALS_FILE, "w") as f:
+            json.dump(approvals, f)
+
+    # Load initial state on first run of session
+    if "approvals_loaded" not in st.session_state:
+        if os.path.exists(APPROVALS_FILE):
+            try:
+                with open(APPROVALS_FILE, "r") as f:
+                    saved_approvals = json.load(f)
+                for name in saved_approvals:
+                    st.session_state[f"approve_{name}"] = True
+            except Exception as e:
+                print(f"Error loading approvals: {e}")
+        st.session_state.approvals_loaded = True
+    # -------------------------
     
     if st.button("Refresh Archive"):
         st.rerun()
@@ -273,7 +296,7 @@ with tab2:
                         for idx, (b_name, g_path) in enumerate(row_items):
                             with cols[idx]:
                                 st.image(g_path, caption=os.path.basename(g_path), use_container_width=True)
-                                st.checkbox("Approve", key=f"approve_{b_name}")
+                                st.checkbox("Approve", key=f"approve_{b_name}", on_change=save_approvals)
                                 st.divider()
             
             else:
@@ -320,7 +343,7 @@ with tab2:
                     with col3:
                         if gen_image_path:
                             st.image(gen_image_path, caption=f"Generated: {os.path.basename(gen_image_path)}", width='content')
-                            st.checkbox("Approve", key=f"approve_{base_name}")
+                            st.checkbox("Approve", key=f"approve_{base_name}", on_change=save_approvals)
                         else:
                             st.info("No generated image yet.")
                     
