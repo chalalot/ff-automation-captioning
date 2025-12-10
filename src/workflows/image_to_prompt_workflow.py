@@ -36,6 +36,7 @@ class ImageToPromptWorkflow:
             You can analyze an image and breakdown the:
             - Outfit (colors, textures, cuts)
             - Pose and body language
+            - Camera Angle and Head Direction
             - Background and setting details (briefly)
             - Lighting setup (shadows, source)
             
@@ -98,8 +99,10 @@ class ImageToPromptWorkflow:
             1. **Body Details**: How the body looks like, shape, features.
             2. **Outfit**: Clothing items, colors, fit, textures.
             3. **Pose/Action**: Hand placement, body angle, specific gestures.
-            4. **Background**: Simple description of setting (indoor/outdoor, key elements).
-            5. **Lighting**: Direction and mood.
+            4. **Camera Angle**: (e.g. High angle, low angle, eye level, dutch angle, close-up, full shot, etc.) - BE EXACT.
+            5. **Head Direction**: (e.g. Facing forward, looking left, profile view, looking back over shoulder, etc.) - BE EXACT.
+            6. **Background**: Simple description of setting (indoor/outdoor, key elements).
+            7. **Lighting**: Direction and mood.
             
             *Keep it objective and detailed.*
             """,
@@ -115,9 +118,12 @@ class ImageToPromptWorkflow:
             **MANDATORY RULES:**
             1. **Prefix**: Start with "<lora:{persona_name.lower()}>, Instagirl," (Adjust trigger word if needed for other personas).
             2. **Subject**: "the girl (22-23 years old), visible cleavage"
-            3. **Hairstyle**: CHOOSE EXACTLY ONE from this list (do not modify):
+            3. **Hairstyle**: 
+               - PRIORITY: Use the hairstyle exactly as described in the reference image analysis if it is clear and distinct.
+               - FALLBACK: If the reference hair is unclear, choose ONE from this list:
                {self.HAIRSTYLES}
-            4. **Length Constraint**: The final output MUST be between 700 and 800 characters long. To achieve this, provide VERY detailed descriptions of the outfit, textures, background, lighting, and atmosphere, while maintaining the comma-separated keyword format.
+            4. **Camera & Orientation**: You MUST include the specific **Camera Angle** and **Head Direction** keywords from the analysis (e.g., "low angle", "looking back", "profile view").
+            5. **Length Constraint**: The final output MUST be between 700 and 800 characters long. To achieve this, provide VERY detailed descriptions of the outfit, textures, background, lighting, and atmosphere, while maintaining the comma-separated keyword format.
             
             **STYLE INSTRUCTIONS:**
             - **Vibe**: Daily, casual, authentic. NOT cinematic.
@@ -128,7 +134,7 @@ class ImageToPromptWorkflow:
             Comma-separated keywords only.
             
             **Example**:
-            "<lora:{persona_name.lower()}>, Instagirl, the girl (22-23 years old), [SELECTED_HAIRSTYLE], wearing white t-shirt, blue denim jeans, standing in a cafe, wooden table, coffee cup, natural lighting, realistic skin texture, daily photography, casual vibe..." (ensure length is 700-800 chars)
+            "<lora:{persona_name.lower()}>, Instagirl, visible cleavage, low angle shot, looking back over shoulder, the girl (22-23 years old), [HAIRSTYLE_FROM_IMAGE], wearing white t-shirt, blue denim jeans, standing in a cafe, wooden table, coffee cup, natural lighting, realistic skin texture, daily photography, casual vibe..." (ensure length is 700-800 chars)
             """,
             expected_output="A single text string of comma-separated keywords, approximately 700-800 characters in length.",
             agent=self.engineer,
