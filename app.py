@@ -56,24 +56,41 @@ if "results" not in st.session_state:
 tab1, tab2 = st.tabs(["Workspace", "Archive"])
 
 with tab1:
-    # --- 1. File Upload Section ---
-    st.header("1. Upload Images")
-    uploaded_files = st.file_uploader("Upload images to 'crawl' folder", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'webp'])
+    # --- 1. Workflow Mode ---
+    st.header("1. Workflow Mode")
+    workflow_mode = st.radio("Select Input Source:", ["Self Input (Upload)", "From Mounted Folder (/Sorted)"])
+    
+    selected_source_dir = CRAWL_DIR # Default for upload mode
 
-    if uploaded_files:
-        if st.button("Save to Crawl Folder"):
-            # Clear existing crawl directory
-            if os.path.exists(CRAWL_DIR):
-                shutil.rmtree(CRAWL_DIR)
-            os.makedirs(CRAWL_DIR)
+    if workflow_mode == "Self Input (Upload)":
+        st.subheader("Upload Images")
+        uploaded_files = st.file_uploader("Upload images to process", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'webp'])
+
+        if uploaded_files:
+            if st.button("Save & Prepare"):
+                # Clear existing crawl directory
+                if os.path.exists(CRAWL_DIR):
+                    shutil.rmtree(CRAWL_DIR)
+                os.makedirs(CRAWL_DIR)
+                
+                # Save new files
+                for uploaded_file in uploaded_files:
+                    file_path = os.path.join(CRAWL_DIR, uploaded_file.name)
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                
+                st.success(f"Saved {len(uploaded_files)} images to staging folder.")
+    
+    else: # From Mounted Folder
+        st.subheader("Select Folder")
+        folder_option = st.radio("Choose Subfolder:", ["Indoor", "Outdoor"])
+        
+        if folder_option == "Indoor":
+            selected_source_dir = "/Sorted/Indoor"
+        else:
+            selected_source_dir = "/Sorted/Outdoor"
             
-            # Save new files
-            for uploaded_file in uploaded_files:
-                file_path = os.path.join(CRAWL_DIR, uploaded_file.name)
-                with open(file_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-            
-            st.success(f"Saved {len(uploaded_files)} images to {CRAWL_DIR}/")
+        st.info(f"Using source directory: {selected_source_dir}")
 
     # --- 2. Generation Flow Section ---
     st.header("2. Generation Flow")
@@ -81,17 +98,17 @@ with tab1:
     # Step 1: Captioning (Generate Prompts)
     st.subheader("Step 1: Generate Prompts")
     
-    async def run_captioning():
+    async def run_captioning(source_dir):
         workflow = ImageToPromptWorkflow(verbose=True)
         results = []
         
-        # Get files from crawl dir
-        if not os.path.exists(CRAWL_DIR):
-            st.error("Crawl directory does not exist. Please upload images first.")
+        # Get files from source dir
+        if not os.path.exists(source_dir):
+            st.error(f"Source directory '{source_dir}' does not exist.")
             return []
 
         valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
-        image_files = [f for f in os.listdir(CRAWL_DIR) if f.lower().endswith(valid_exts)]
+        image_files = [f for f in os.listdir(source_dir) if f.lower().endswith(valid_exts)]
         image_files.sort()
         
         if not image_files:
@@ -103,7 +120,7 @@ with tab1:
         
         for i, filename in enumerate(image_files):
             status_text.text(f"Processing {filename} ({i+1}/{len(image_files)})...")
-            image_path = os.path.join(CRAWL_DIR, filename)
+            image_path = os.path.join(source_dir, filename)
             
             try:
                 # Run workflow
@@ -138,8 +155,8 @@ with tab1:
         return results
 
     if st.button("Generate Prompts (Step 1)"):
-        with st.spinner("Generating Prompts..."):
-            st.session_state.results = asyncio.run(run_captioning())
+        with st.spinner(f"Generating Prompts from {selected_source_dir}..."):
+            st.session_state.results = asyncio.run(run_captioning(selected_source_dir))
             st.success("Prompts generated and saved to 'ready'.")
 
     # Step 2: Queue Generation
