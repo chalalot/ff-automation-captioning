@@ -31,7 +31,7 @@ st.title("🚀 CrewAI Image-to-Prompt Workflow")
 
 # Sidebar Configuration
 st.sidebar.header("Configuration")
-kol_persona = st.sidebar.text_input("KOL Persona", value="Jennie")
+kol_persona = st.sidebar.selectbox("KOL Persona", ["Jennie", "Sephera"])
 
 # Constants
 base_dir = os.path.abspath(os.path.dirname(__file__))
@@ -167,7 +167,7 @@ with tab1:
         with st.spinner("Queueing prompts..."):
             try:
                 # Use asyncio.run to execute the async main function of the script
-                asyncio.run(run_queue_script())
+                asyncio.run(run_queue_script(kol_persona=kol_persona))
                 st.success("Generation queued! Check terminal for details.")
             except Exception as e:
                 st.error(f"Failed to queue generation: {e}")

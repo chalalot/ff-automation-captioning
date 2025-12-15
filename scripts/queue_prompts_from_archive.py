@@ -16,9 +16,8 @@ logger = logging.getLogger(__name__)
 
 # Constants from user request
 NEGATIVE_PROMPT = "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走, censored, sunburnt skin, rashy skin, red cheeks, pouty face, duckbil face"
-KOL_PERSONA = "Jennie"  # Maps to the requested LoRAs in ComfyUIClient
 
-async def main():
+async def main(kol_persona="Jennie"):
     ready_dir = Path("ready")
     crawl_dir = Path("crawl")
     
@@ -82,10 +81,10 @@ async def main():
             execution_id = await client.generate_image(
                 positive_prompt=prompt_content,
                 negative_prompt=NEGATIVE_PROMPT,
-                kol_persona=KOL_PERSONA
+                kol_persona=kol_persona
             )
             
-            logger.info(f"✅ Queued {file_path.name} - Execution ID: {execution_id}")
+            logger.info(f"✅ Queued {file_path.name} (Persona: {kol_persona}) - Execution ID: {execution_id}")
             
             # Record execution data
             executions_data.append({
