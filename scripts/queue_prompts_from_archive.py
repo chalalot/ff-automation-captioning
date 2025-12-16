@@ -1,6 +1,7 @@
 import os
 import sys
 import asyncio
+import argparse
 import logging
 import json
 from pathlib import Path
@@ -17,7 +18,19 @@ logger = logging.getLogger(__name__)
 # Constants from user request
 NEGATIVE_PROMPT = "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走, censored, sunburnt skin, rashy skin, red cheeks, pouty face, duckbil face"
 
-async def main(kol_persona="Jennie"):
+async def main():
+    parser = argparse.ArgumentParser(description="Queue prompts for generation (Step 2)")
+    parser.add_argument("--persona", help="Persona name to filter prompts (e.g., Jennie, Sephera)")
+    args = parser.parse_args()
+    
+    # Use provided persona or default (but for filtering we need to be careful)
+    target_persona = args.persona
+    
+    # If no persona provided via CLI, maybe default to "Jennie" for the ComfyUI call 
+    # but be careful about filtering. 
+    # For ComfyUI generation, we need a persona name.
+    kol_persona = target_persona if target_persona else "Jennie"
+
     ready_dir = Path("ready")
     crawl_dir = Path("crawl")
     
@@ -27,10 +40,18 @@ async def main(kol_persona="Jennie"):
 
     # Find valid prompt files: .txt files
     # In ready folder we expect only the generated prompts, but we can keep the filter just in case
-    prompt_files = [
+    all_files = [
         f for f in ready_dir.glob("*.txt") 
         if not f.name.endswith("_description.txt") and f.name != "executions.json"
     ]
+    
+    # Filter by persona if provided
+    if target_persona:
+        prompt_files = [f for f in all_files if f.name.startswith(f"{target_persona}_")]
+        logger.info(f"Filtering for persona '{target_persona}': Found {len(prompt_files)} matching files out of {len(all_files)} total.")
+    else:
+        prompt_files = all_files
+        logger.info(f"No persona filter applied. Processing all {len(prompt_files)} files.")
     
     if not prompt_files:
         logger.warning(f"No prompt files found in {ready_dir}")
