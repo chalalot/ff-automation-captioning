@@ -13,6 +13,7 @@ async def main():
     parser.add_argument("--mode", choices=["self", "crawl"], help="Mode: 'self' for specific files, 'crawl' for folders")
     parser.add_argument("--file", help="File path for self input mode")
     parser.add_argument("--folder", choices=["indoor", "outdoor", "crawl"], help="Folder choice for crawl mode")
+    parser.add_argument("--persona", default="Jennie", help="Persona name (e.g. Jennie, Sephera)")
     
     args = parser.parse_args()
     
@@ -55,16 +56,16 @@ async def main():
             f_choice = input("Enter choice (1/2/3): ").strip()
             
             if f_choice == "1":
-                crawl_dir = "/Sorted/Indoor"
+                crawl_dir = "app/Sorted/Indoor"
             elif f_choice == "2":
-                crawl_dir = "/Sorted/Outdoor"
+                crawl_dir = "app/Sorted/Outdoor"
             else:
                 crawl_dir = "crawl"
         else:
             if folder_choice == "indoor":
-                crawl_dir = "/Sorted/Indoor"
+                crawl_dir = "app/Sorted/Indoor"
             elif folder_choice == "outdoor":
-                crawl_dir = "/Sorted/Outdoor"
+                crawl_dir = "app/Sorted/Outdoor"
             else:
                 crawl_dir = "crawl"
                 
@@ -111,7 +112,7 @@ async def main():
         try:
             result = await workflow.process(
                 image_path=image_path,
-                persona_name="Jennie",
+                persona_name=args.persona,
                 trigger_generation=False # Explicitly False as requested
             )
             

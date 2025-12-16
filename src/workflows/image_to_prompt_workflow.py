@@ -15,12 +15,21 @@ class ImageToPromptWorkflow:
     for Instagirl WAN2.2, adapted for daily/casual style.
     """
 
-    HAIRSTYLES = [
-        "long honey-blonde hair tied in a half-up bun with loose face-framing strands",
-        "thick and very long honey blonde hair with hippie style",
-        "thick and very long honey blonde hair with loose waves",
-        "long blonde hair messy bun with loose front strands"
-    ]
+    PERSONA_HAIRSTYLES = {
+        "Jennie": [
+            "long honey-blonde hair tied in a half-up bun with loose face-framing strands",
+            "thick and very long honey blonde hair with hippie style",
+            "thick and very long honey blonde hair with loose waves",
+            "long blonde hair messy bun with loose front strands"
+        ],
+        "Sephera": [
+            "dark brown long hair with loose waves",
+            "long dark brown hair, wet and sunlit, sticking gently to skin",
+            "long dark brown hair",
+            "long dark brown hair, slightly damp, sunlit reflections",
+            "long dark straight hair, slightly wet and sun-lit, strands clinging softly to her shoulder"
+        ]
+    }
 
     def __init__(self, verbose: bool = True):
         self.verbose = verbose
@@ -88,6 +97,23 @@ class ImageToPromptWorkflow:
 
         print(f"\n📸 Starting Workflow for: {image_path} (Persona: {persona_name})")
 
+        # Determine hairstyles based on persona
+        persona_key = next((k for k in self.PERSONA_HAIRSTYLES.keys() if k.lower() == persona_name.lower()), "Jennie")
+        available_hairstyles = self.PERSONA_HAIRSTYLES[persona_key]
+        
+        # Determine hairstyle instruction
+        if persona_name.lower() == "sephera":
+             hairstyle_instruction = f"""
+               - You MUST choose ONE from this list explicitly (Do not invent others):
+               {available_hairstyles}
+             """
+        else:
+             hairstyle_instruction = f"""
+               - PRIORITY: Use the hairstyle exactly as described in the reference image analysis if it is clear and distinct.
+               - FALLBACK: If the reference hair is unclear, choose ONE from this list:
+               {available_hairstyles}
+             """
+
         # Task 1: Analyze
         analyze_task = Task(
             description=f"""
@@ -101,12 +127,12 @@ class ImageToPromptWorkflow:
             3. **Pose/Action**: Hand placement, body angle, specific gestures.
             4. **Camera Angle**: (e.g. High angle, low angle, eye level, dutch angle, close-up, full shot, etc.) - BE EXACT.
             5. **Head Direction**: (e.g. Facing forward, looking left, profile view, looking back over shoulder, etc.) - BE EXACT.
-            6. **Background**: Simple description of setting (indoor/outdoor, key elements).
+            6. **Background**: Detailed description of setting (indoor/outdoor, specific objects, colors, key elements).
             7. **Lighting**: Direction and mood.
             
             *Keep it objective and detailed.*
             """,
-            expected_output="A detailed textual description of the image's visual elements, covering body, outfit, and pose.",
+            expected_output="A detailed textual description of the image's visual elements, covering body, outfit, pose, and background.",
             agent=self.analyst
         )
 
@@ -117,13 +143,13 @@ class ImageToPromptWorkflow:
              
             **MANDATORY RULES:**
             1. **Prefix**: Start with "<lora:{persona_name.lower()}>, Instagirl," (Adjust trigger word if needed for other personas).
-            2. **Subject**: "the girl (22-23 years old), visible cleavage"
+            2. **Subject**: "the girl (22-23 years old)"
             3. **Hairstyle**: 
-               - PRIORITY: Use the hairstyle exactly as described in the reference image analysis if it is clear and distinct.
-               - FALLBACK: If the reference hair is unclear, choose ONE from this list:
-               {self.HAIRSTYLES}
+               {hairstyle_instruction}
             4. **Camera & Orientation**: You MUST include the specific **Camera Angle** and **Head Direction** keywords from the analysis (e.g., "low angle", "looking back", "profile view").
-            5. **Length Constraint**: The final output MUST be between 700 and 800 characters long. To achieve this, provide VERY detailed descriptions of the outfit, textures, background, lighting, and atmosphere, while maintaining the comma-separated keyword format.
+            5. **Outfit**: You MUST include specific keywords describing the outfit from the analysis (colors, textures, fit, specific items).
+            6. **Background**: You MUST include specific keywords describing the background and setting from the analysis (location, props, lighting).
+            7. **Length Constraint**: The final output MUST be between 700 and 800 characters long. To achieve this, provide VERY detailed descriptions of the outfit, textures, background, lighting, and atmosphere, while maintaining the comma-separated keyword format.
             
             **STYLE INSTRUCTIONS:**
             - **Vibe**: Daily, casual, authentic. NOT cinematic.
@@ -134,7 +160,7 @@ class ImageToPromptWorkflow:
             Comma-separated keywords only.
             
             **Example**:
-            "<lora:{persona_name.lower()}>, Instagirl, visible cleavage, low angle shot, looking back over shoulder, the girl (22-23 years old), [HAIRSTYLE_FROM_IMAGE], wearing white t-shirt, blue denim jeans, standing in a cafe, wooden table, coffee cup, natural lighting, realistic skin texture, daily photography, casual vibe..." (ensure length is 700-800 chars)
+            "<lora:{persona_name.lower()}>, Instagirl, low angle shot, looking back over shoulder, the girl (22-23 years old), [HAIRSTYLE_FROM_IMAGE], wearing white t-shirt, blue denim jeans, standing in a cafe, wooden table, coffee cup, natural lighting, realistic skin texture, daily photography, casual vibe..." (ensure length is 700-800 chars)
             """,
             expected_output="A single text string of comma-separated keywords, approximately 700-800 characters in length.",
             agent=self.engineer,
