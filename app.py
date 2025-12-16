@@ -86,9 +86,9 @@ with tab1:
         folder_option = st.radio("Choose Subfolder:", ["Indoor", "Outdoor"])
         
         if folder_option == "Indoor":
-            selected_source_dir = "app/Sorted/Indoor"
+            selected_source_dir = "/app/Sorted/Indoor"
         else:
-            selected_source_dir = "app/Sorted/Outdoor"
+            selected_source_dir = "/app/Sorted/Outdoor"
             
         st.info(f"Using source directory: {selected_source_dir}")
 

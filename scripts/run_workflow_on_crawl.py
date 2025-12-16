@@ -56,16 +56,16 @@ async def main():
             f_choice = input("Enter choice (1/2/3): ").strip()
             
             if f_choice == "1":
-                crawl_dir = "app/Sorted/Indoor"
+                crawl_dir = "/app/Sorted/Indoor"
             elif f_choice == "2":
-                crawl_dir = "app/Sorted/Outdoor"
+                crawl_dir = "/app/Sorted/Outdoor"
             else:
                 crawl_dir = "crawl"
         else:
             if folder_choice == "indoor":
-                crawl_dir = "app/Sorted/Indoor"
+                crawl_dir = "/app/Sorted/Indoor"
             elif folder_choice == "outdoor":
-                crawl_dir = "app/Sorted/Outdoor"
+                crawl_dir = "/app/Sorted/Outdoor"
             else:
                 crawl_dir = "crawl"
                 
