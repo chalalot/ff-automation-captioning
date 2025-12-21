@@ -2,137 +2,155 @@ import os
 import sys
 import asyncio
 import logging
-import json
 import shutil
 from pathlib import Path
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.third_parties.comfyui_client import ComfyUIClient, ComfyUIAPIError
+from src.third_parties.comfyui_client import ComfyUIClient
+from src.database.image_logs_storage import ImageLogsStorage
+from src.third_parties.gcs_client import upload_image_to_gcs
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 async def main():
-    ready_dir = Path("ready")
     archive_dir = Path("crawl_archive")
-    executions_file = ready_dir / "executions.json"
+    archive_dir.mkdir(exist_ok=True)
     
-    if not executions_file.exists():
-        logger.error(f"Executions file not found at {executions_file}")
-        return
-
-    try:
-        executions_data = json.loads(executions_file.read_text(encoding='utf-8'))
-    except json.JSONDecodeError:
-        logger.error("Failed to decode executions.json")
-        return
-
-    if not executions_data:
-        logger.info("No executions to process.")
-        return
-
-    logger.info(f"Checking {len(executions_data)} executions...")
+    ready_dir = Path("ready")
     
+    storage = ImageLogsStorage()
     client = ComfyUIClient()
     
-    # Track which indices to remove (completed ones)
-    completed_indices = []
+    pending_items = storage.get_pending_executions()
     
-    # Ensure archive directory exists
-    archive_dir.mkdir(exist_ok=True)
+    if not pending_items:
+        logger.info("No pending executions found in database.")
+        return
 
-    for i, item in enumerate(executions_data):
-        execution_id = item.get("execution_id")
-        base_name = item.get("base_name")
-        prompt_file = Path(item.get("prompt_file"))
-        original_image = Path(item.get("original_image")) if item.get("original_image") else None
+    logger.info(f"Checking {len(pending_items)} pending executions...")
+    
+    for item in pending_items:
+        execution_id = item['execution_id']
+        image_ref_path = item['image_ref_path']
         
         if not execution_id:
-            logger.warning(f"Skipping item {i} due to missing execution_id")
             continue
             
-        logger.info(f"Checking status for {base_name} ({execution_id})...")
-        
         try:
+            # Check Status
             status_data = await client.check_status(execution_id)
             status = status_data.get("status")
             
             if status == "completed":
-                logger.info(f"✅ {base_name} is completed. Downloading...")
+                logger.info(f"✅ Execution {execution_id} completed. Processing...")
                 
                 # Get output image path
                 output_images = status_data.get("output_images", [])
-                image_path = None
+                comfy_image_path = None
                 
-                # Logic to extract path from output_images structure
-                # Structure: [{"node_id": ["path1", "path2"]}] or similar
                 if output_images and isinstance(output_images, list):
                     first_output = output_images[0]
                     if isinstance(first_output, dict):
                         for key, paths in first_output.items():
                             if paths and len(paths) > 0:
-                                image_path = paths[0]
+                                comfy_image_path = paths[0]
                                 break
                 
-                if image_path:
-                    # Download generated image
-                    image_bytes = await client.download_image_by_path(image_path)
+                if comfy_image_path:
+                    # Download Generated Image
+                    image_bytes = await client.download_image_by_path(comfy_image_path)
                     
-                    # Define destination paths
-                    # Use base_name for consistency
-                    # 1. Original Image
-                    if original_image and original_image.exists():
-                        dest_original = archive_dir / original_image.name
-                        shutil.move(str(original_image), str(dest_original))
-                        logger.info(f"Moved original image to {dest_original}")
+                    # Determine Base Name
+                    base_name = "unknown"
+                    if image_ref_path:
+                        base_name = Path(image_ref_path).stem
                     else:
-                        logger.warning(f"Original image not found at {original_image}")
+                        base_name = execution_id
 
-                    # 2. Prompt File
+                    # 1. Rename & Archive Ref Image
+                    new_ref_path = None
+                    if image_ref_path and os.path.exists(image_ref_path):
+                        original_ext = Path(image_ref_path).suffix
+                        # Rename logic: [basename]_ref.[ext]
+                        ref_filename = f"{base_name}_ref{original_ext}"
+                        dest_ref = archive_dir / ref_filename
+                        
+                        shutil.move(image_ref_path, str(dest_ref))
+                        new_ref_path = str(dest_ref)
+                        logger.info(f"Moved ref image to {dest_ref}")
+                    elif image_ref_path:
+                        # If file doesn't exist (already moved?), keep old path or check archive?
+                        # Assume it might be missing or already moved.
+                        logger.warning(f"Ref image not found at {image_ref_path}")
+                        new_ref_path = image_ref_path # Keep original string if move failed
+                    
+                    # 2. Rename & Archive Prompt File
+                    # Infer prompt file from base_name in ready/ directory
+                    prompt_file = ready_dir / f"{base_name}.txt"
                     if prompt_file.exists():
-                        dest_prompt = archive_dir / prompt_file.name
+                        dest_prompt = archive_dir / f"{base_name}_prompt.txt"
                         shutil.move(str(prompt_file), str(dest_prompt))
                         logger.info(f"Moved prompt file to {dest_prompt}")
-                    else:
-                        logger.warning(f"Prompt file not found at {prompt_file}")
+                    
+                    # 3. Rename & Upload Result Image
+                    # Naming: [basename]_result.png
+                    result_filename = f"{base_name}_result.png"
+                    
+                    # Optional: Save locally to archive for backup
+                    local_result_path = archive_dir / result_filename
+                    local_result_path.write_bytes(image_bytes)
+                    logger.info(f"Saved local result to {local_result_path}")
+                    
+                    # Upload to GCP
+                    gcs_path = f"generated/{result_filename}"
+                    logger.info(f"Uploading result to GCP: {gcs_path}")
+                    
+                    try:
+                        public_url = upload_image_to_gcs(
+                            image_bytes=image_bytes,
+                            gcs_path=gcs_path,
+                            content_type="image/png"
+                        )
+                        logger.info(f"Uploaded to GCP: {public_url}")
                         
-                    # 3. Generated Image
-                    # Save as basename_generated.png (ComfyUI usually returns PNG)
-                    # We can infer extension from image_path or just assume .png
-                    ext = os.path.splitext(image_path)[1] or ".png"
-                    generated_filename = f"{base_name}_generated{ext}"
-                    dest_generated = archive_dir / generated_filename
-                    
-                    dest_generated.write_bytes(image_bytes)
-                    logger.info(f"Saved generated image to {dest_generated}")
-                    
-                    completed_indices.append(i)
-                    
+                        # 4. Update Database
+                        storage.update_result_path(
+                            execution_id=execution_id, 
+                            result_image_path=public_url,
+                            new_ref_path=new_ref_path
+                        )
+                        logger.info(f"Database updated for {execution_id}")
+                        
+                    except Exception as upload_err:
+                        logger.error(f"Failed to upload to GCP: {upload_err}")
+                        # Update DB with local path if GCP fails? Or leave NULL?
+                        # Leaving NULL might cause retry loop which is good for transient errors.
+                        # But if files are moved, retry might fail on ref image move.
+                        # Ref image move is already done.
+                        # If GCP fails, we should probably NOT leave it NULL if we can't retry cleanly.
+                        # But "stuck" usually implies we WANT retry.
+                        # If retry happens: ref image move will fail (file not found). logic handles check `if os.path.exists`.
+                        # So retry is safe.
+                        pass
+                        
                 else:
-                    logger.warning(f"No output image path found for completed execution {execution_id}")
+                    logger.warning(f"No output image path found for {execution_id}")
 
             elif status == "failed":
                 logger.error(f"❌ Execution {execution_id} failed.")
-                # Optional: Handle failure (remove from list? keep for retry?)
-                # For now, keep it in list but maybe mark as failed?
-                # item['status'] = 'failed' 
+                # Optional: Mark as failed in DB?
+                # storage.update_result_path(execution_id, "FAILED")
                 
             else:
-                logger.info(f"⏳ Status: {status}")
-
+                # Still running/queued
+                pass
+                
         except Exception as e:
-            logger.error(f"Error checking/processing {base_name}: {e}")
-
-    # Remove completed items from the list (in reverse order to avoid index shifting)
-    for i in sorted(completed_indices, reverse=True):
-        executions_data.pop(i)
-        
-    # Save updated executions.json
-    executions_file.write_text(json.dumps(executions_data, indent=2), encoding='utf-8')
-    logger.info(f"Updated executions.json. Remaining pending: {len(executions_data)}")
+            logger.error(f"Error processing {execution_id}: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())

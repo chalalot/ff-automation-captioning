@@ -1,0 +1,179 @@
+       { 
+        "name": "z-image_workflow_auto_prompt",
+        "description": "Auto-imported workflow: z-image with lora",
+        "metadata": {
+            "auto_imported": true,
+            "category": "image-generation",
+            "default": true
+        },
+        "json_content": 
+        {
+        "9": {
+            "inputs": {
+            "filename_prefix": "z-image",
+            "images": [
+                "43",
+                0
+            ]
+            },
+            "class_type": "SaveImage",
+            "_meta": {
+            "title": "Save Image"
+            }
+        },
+        "39": {
+            "inputs": {
+            "clip_name": "qwen_3_4b.safetensors",
+            "type": "stable_diffusion",
+            "device": "default"
+            },
+            "class_type": "CLIPLoader",
+            "_meta": {
+            "title": "Load CLIP"
+            }
+        },
+        "40": {
+            "inputs": {
+            "vae_name": "ae.safetensors"
+            },
+            "class_type": "VAELoader",
+            "_meta": {
+            "title": "Load VAE"
+            }
+        },
+        "41": {
+            "inputs": {
+            "width": 1024,
+            "height": 1600,
+            "batch_size": 1
+            },
+            "class_type": "EmptySD3LatentImage",
+            "_meta": {
+            "title": "EmptySD3LatentImage"
+            }
+        },
+        "42": {
+            "inputs": {
+            "conditioning": [
+                "45",
+                0
+            ]
+            },
+            "class_type": "ConditioningZeroOut",
+            "_meta": {
+            "title": "ConditioningZeroOut"
+            }
+        },
+        "43": {
+            "inputs": {
+            "samples": [
+                "44",
+                0
+            ],
+            "vae": [
+                "40",
+                0
+            ]
+            },
+            "class_type": "VAEDecode",
+            "_meta": {
+            "title": "VAE Decode"
+            }
+        },
+        "44": {
+            "inputs": {
+            "seed": 1109773483329214,
+            "steps": 9,
+            "cfg": 1,
+            "sampler_name": "res_multistep",
+            "scheduler": "simple",
+            "denoise": 1,
+            "model": [
+                "47",
+                0
+            ],
+            "positive": [
+                "45",
+                0
+            ],
+            "negative": [
+                "42",
+                0
+            ],
+            "latent_image": [
+                "41",
+                0
+            ]
+            },
+            "class_type": "KSampler",
+            "_meta": {
+            "title": "KSampler"
+            }
+        },
+        "45": {
+            "inputs": {
+            "text": "eye level shot, profile view, the girl (22-23 years old), long blonde hair mostly tied back, face-framing loose strands, standing in profile with body slightly angled away, right hand touching hair at back of head, left arm relaxed, wearing light-colored bikini top, metallic shimmery thin crisscross straps, matching blue wrap skirt, soft flowing texture, casual front knot, toned physique accentuated by fitted style, natural lighting, soft shadows, serene tranquil setting, picturesque waterfall, cascading rocks, surrounded by lush greenery, remote ambiance, gazing left into distance, realistic skin texture, daily photography, authentic casual vibe, outdoor environment.",
+            "clip": [
+                "39",
+                0
+            ]
+            },
+            "class_type": "CLIPTextEncode",
+            "_meta": {
+            "title": "CLIP Text Encode (Prompt)"
+            }
+        },
+        "46": {
+            "inputs": {
+            "unet_name": "z_image_turbo_bf16.safetensors",
+            "weight_dtype": "default"
+            },
+            "class_type": "UNETLoader",
+            "_meta": {
+            "title": "Load Diffusion Model"
+            }
+        },
+        "47": {
+            "inputs": {
+            "shift": 3,
+            "model": [
+                "53",
+                0
+            ]
+            },
+            "class_type": "ModelSamplingAuraFlow",
+            "_meta": {
+            "title": "ModelSamplingAuraFlow"
+            }
+        },
+        "53": {
+            "inputs": {
+            "lora_name": "z-image-persona/jennie_test_training_copy.safetensors",
+            "strength_model": 1,
+            "model": [
+                "46",
+                0
+            ]
+            },
+            "class_type": "LoraLoaderModelOnly",
+            "_meta": {
+            "title": "LoraLoaderModelOnly"
+            }
+        }
+        },
+        "overwritable_inputs": {
+            "positive_prompt": {
+                "field": "45.inputs.text",
+                "dtype": "str"
+            },
+            "persona_lora_name": {
+                "field": "53.inputs.lora_name",
+                "dtype": "str"
+            }
+        },
+        "seed_fields": [
+            "44.inputs.seed"
+        ],
+        "created_at": 1761726985.53074,
+        "last_update": 1764581341.510023
+    }

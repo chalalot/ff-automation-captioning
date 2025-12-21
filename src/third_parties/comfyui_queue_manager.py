@@ -23,28 +23,41 @@ from dataclasses import dataclass, asdict
 
 logger = logging.getLogger(__name__)
 
-# Global semaphore to ensure only one ComfyUI request at a time
-_comfyui_semaphore: Optional[asyncio.Semaphore] = None
-_semaphore_lock = asyncio.Lock()
-
-# Global queue state for frontend monitoring
+# Global queue state (data only, shared across loops if needed, but locks are per-loop)
 _active_queue: List['QueuedRequest'] = []
-_queue_state_lock = asyncio.Lock()
 
 # Context variable to track request IDs for logging
 _request_id_var: ContextVar[str] = ContextVar('request_id', default='unknown')
 
 
+class LoopState:
+    """Holds asyncio primitives bound to a specific event loop."""
+    def __init__(self):
+        self.semaphore = asyncio.Semaphore(1)
+        self.queue_lock = asyncio.Lock()
+
+# Cache for loop-bound states
+_loop_states: Dict[asyncio.AbstractEventLoop, LoopState] = {}
+
+
+def _get_loop_state() -> LoopState:
+    """Get or create the state for the current event loop."""
+    loop = asyncio.get_running_loop()
+    if loop not in _loop_states:
+        # cleanup closed loops
+        closed_loops = [l for l in _loop_states if l.is_closed()]
+        for l in closed_loops:
+            del _loop_states[l]
+            
+        _loop_states[loop] = LoopState()
+        logger.debug(f"Initialized new ComfyUI queue state for loop {id(loop)}")
+    return _loop_states[loop]
+
+
 async def get_comfyui_semaphore() -> asyncio.Semaphore:
-    """Get or create the global ComfyUI semaphore (max 1 concurrent request)."""
-    global _comfyui_semaphore
-    
-    async with _semaphore_lock:
-        if _comfyui_semaphore is None:
-            _comfyui_semaphore = asyncio.Semaphore(1)  # Only 1 concurrent request
-            logger.info("🔒 ComfyUI queue manager initialized (max 1 concurrent request)")
-    
-    return _comfyui_semaphore
+    """Get the ComfyUI semaphore for the current loop."""
+    state = _get_loop_state()
+    return state.semaphore
 
 
 @dataclass
@@ -108,7 +121,8 @@ class QueuedRequest:
 
 async def _add_to_queue(request: QueuedRequest):
     """Add request to the active queue for monitoring."""
-    async with _queue_state_lock:
+    state = _get_loop_state()
+    async with state.queue_lock:
         _active_queue.append(request)
         # Keep only last 50 requests to prevent memory bloat
         if len(_active_queue) > 50:
@@ -117,7 +131,8 @@ async def _add_to_queue(request: QueuedRequest):
 
 async def _update_request_status(request_id: str, status: str, **kwargs):
     """Update request status in the active queue."""
-    async with _queue_state_lock:
+    state = _get_loop_state()
+    async with state.queue_lock:
         for req in _active_queue:
             if req.request_id == request_id:
                 req.status = status
@@ -129,9 +144,16 @@ async def _update_request_status(request_id: str, status: str, **kwargs):
 
 async def _remove_from_queue(request_id: str):
     """Remove request from active queue (after completion)."""
-    async with _queue_state_lock:
+    state = _get_loop_state()
+    async with state.queue_lock:
         global _active_queue
-        _active_queue = [req for req in _active_queue if req.request_id != request_id]
+        # Note: We need to assign to the global variable, not a local one
+        # But we can't easily modify the global list reference itself if imported elsewhere?
+        # Actually _active_queue is a list object. We can modify it in place.
+        # But filter creates a new list.
+        # Let's modify in place to be safe with global references
+        remaining = [req for req in _active_queue if req.request_id != request_id]
+        _active_queue[:] = remaining
 
 
 async def execute_with_queue(
@@ -166,7 +188,7 @@ async def execute_with_queue(
     
     logger.info(f"🔄 [Queue] Request {request_id} queued: {description}")
     
-    # Get the semaphore (create if doesn't exist)
+    # Get the semaphore for current loop
     semaphore = await get_comfyui_semaphore()
     
     try:
@@ -341,7 +363,8 @@ async def get_queue_status() -> Dict[str, Any]:
 
 async def get_active_queue() -> List[Dict[str, Any]]:
     """Get the current active queue for frontend monitoring."""
-    async with _queue_state_lock:
+    state = _get_loop_state()
+    async with state.queue_lock:
         return [req.to_dict() for req in _active_queue]
 
 
@@ -388,7 +411,8 @@ async def get_detailed_queue_status() -> Dict[str, Any]:
 
 async def get_request_by_id(request_id: str) -> Optional[Dict[str, Any]]:
     """Get specific request details by ID."""
-    async with _queue_state_lock:
+    state = _get_loop_state()
+    async with state.queue_lock:
         for req in _active_queue:
             if req.request_id == request_id:
                 return req.to_dict()
@@ -397,5 +421,6 @@ async def get_request_by_id(request_id: str) -> Optional[Dict[str, Any]]:
 
 async def get_requests_by_celery_task(celery_task_id: str) -> List[Dict[str, Any]]:
     """Get all requests associated with a Celery task."""
-    async with _queue_state_lock:
+    state = _get_loop_state()
+    async with state.queue_lock:
         return [req.to_dict() for req in _active_queue if req.celery_task_id == celery_task_id]

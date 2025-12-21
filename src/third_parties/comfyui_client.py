@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import random
+import re
 import time
 import uuid
 from datetime import datetime
@@ -56,26 +57,44 @@ COMFYUI_POLL_INTERVAL = GlobalConfig.COMFYUI_POLL_INTERVAL
 COMFYUI_MAX_POLL_TIME = GlobalConfig.COMFYUI_MAX_POLL_TIME
 COMFYUI_MAX_RETRIES = GlobalConfig.COMFYUI_MAX_RETRIES
 
-# Default workflow configuration
-DEFAULT_WORKFLOW_ID = "82892890-19b4-4c3c-9ea9-5e004afd3343"
+# Workflow configurations
+WORKFLOW_IDS = {
+    "turbo": "43ad0c5c-3394-433b-b434-8089eb43f3c9",
+    "wan2.2": "82892890-19b4-4c3c-9ea9-5e004afd3343"
+}
 
-# Persona to LoRA mapping
-PERSONA_LORA_MAPPING = {
+# Persona mappings
+PERSONA_LORA_MAPPING_TURBO = {
+    "Jennie": "z-image-persona/jennie_test_training_copy.safetensors",
+    "Sephera": "z-image-persona/sephera-z-image-turbo-v1_copy.safetensors",
+    "Nya": "z-image-persona/nya-z-image-turbo-v1.safetensors",
+    "Emi": "z-image-persona/emi-z-image-turbo-v1_copy_copy_copy.safetensors"
+}
+
+PERSONA_LORA_MAPPING_WAN = {
     "Jennie": {
-        "persona_low_lora_name": "persona/WAN2.2-JennieV3_LowNoise_KhiemLe.safetensors",
-        "persona_high_lora_name": "persona/WAN2.2-JennieV3_HighNoise_KhiemLe.safetensors"
+        "low": "persona/WAN2.2-JennieV3_LowNoise_KhiemLe.safetensors",
+        "high": "persona/WAN2.2-JennieV3_HighNoise_KhiemLe.safetensors"
     },
     "Sephera": {
-        "persona_low_lora_name": "persona/WAN2.2-LowNoise_Sephera_KhiemLe.safetensors",
-        "persona_high_lora_name": "persona/WAN2.2-HighNoise_Sephera_KhiemLe.safetensors"
+        "low": "persona/WAN2.2-LowNoise_Sephera_KhiemLe.safetensors",
+        "high": "persona/WAN2.2-HighNoise_Sephera_KhiemLe.safetensors"
     },
     "Mika": {
-        "persona_low_lora_name": "persona/WAN2.2-MikaV2_LowNoise_KhiemLe.safetensors",
-        "persona_high_lora_name": "persona/WAN2.2-MikaV2_HighNoise_KhiemLe.safetensors"
+        "low": "persona/WAN2.2-MikaV2_LowNoise_KhiemLe.safetensors",
+        "high": "persona/WAN2.2-MikaV2_HighNoise_KhiemLe.safetensors"
     },
     "Nya": {
-        "persona_low_lora_name": "persona/WAN2.2-LowNoise_Nya_KhiemLe.safetensors",
-        "persona_high_lora_name": "persona/WAN2.2-HighNoise_Nya_KhiemLe.safetensors"
+        "low": "persona/WAN2.2-LowNoise_Nya_KhiemLe.safetensors",
+        "high": "persona/WAN2.2-HighNoise_Nya_KhiemLe.safetensors"
+    },
+    "Emi": {
+        "low": "persona/WAN2.2-LowNoise_Nya_KhiemLe.safetensors",
+        "high": "persona/WAN2.2-HighNoise_Nya_KhiemLe.safetensors"
+    },
+    "Roxie": {
+        "low": "persona/WAN2.2-LowNoise_Nya_KhiemLe.safetensors",
+        "high": "persona/WAN2.2-HighNoise_Nya_KhiemLe.safetensors"
     }
 }
 
@@ -240,6 +259,7 @@ class ComfyUIClient:
         self,
         positive_prompt: str,
         negative_prompt: str = DEFAULT_NEGATIVE_PROMPT,
+        workflow_type: str = "turbo",
         workflow_name: Optional[str] = None,
         lora_name: Optional[str] = None,
         kol_persona: Optional[str] = None
@@ -250,6 +270,7 @@ class ComfyUIClient:
         Args:
             positive_prompt: Description of desired image
             negative_prompt: Description of what to avoid
+            workflow_type: Type of workflow to use ("turbo" or "wan2.2")
             workflow_name: Name of the ComfyUI workflow to use (deprecated, uses default workflow)
             lora_name: LoRA model name to use (deprecated, uses persona mapping)
             kol_persona: KOL persona name for automatic lora mapping
@@ -257,24 +278,17 @@ class ComfyUIClient:
         Returns:
             execution_id: ID to track generation progress
         """
-        # Log comprehensive generation parameters
-        logger.info("=" * 80)
-        logger.info("🎨 COMFYUI IMAGE GENERATION REQUEST (NEW EXECUTIONS API)")
-        logger.info("=" * 80)
-        logger.info(f"📝 Positive Prompt: {positive_prompt[:200]}{'...' if len(positive_prompt) > 200 else ''}")
-        logger.info(f"🚫 Negative Prompt: {negative_prompt[:100]}{'...' if len(negative_prompt) > 100 else ''}")
-        logger.info(f"👤 KOL Persona: {kol_persona if kol_persona else 'NOT SPECIFIED'}")
+        workflow_id = WORKFLOW_IDS.get(workflow_type.lower(), WORKFLOW_IDS["turbo"])
+        is_turbo = workflow_type.lower() == "turbo"
 
-        # Build payload with default workflow ID and structure
+        logger.info("=" * 80)
+        logger.info(f"🎨 COMFYUI IMAGE GENERATION REQUEST ({workflow_type.upper()})")
+        logger.info("=" * 80)
+
+        # Base payload
         payload = {
-            "workflow_id": DEFAULT_WORKFLOW_ID,
-            "input_overrides": {
-                "positive_prompt": positive_prompt,
-                "negative_prompt": negative_prompt,
-                "persona_low_lora_name": "",
-                "persona_high_lora_name": ""
-            },
-            "prompt_count": 1,  # Fixed: Generate only 1 image instead of 2
+            "workflow_id": workflow_id,
+            "prompt_count": 1,
             "seed_config": {
                 "strategy": "random",
                 "base_seed": 0,
@@ -282,30 +296,68 @@ class ComfyUIClient:
             }
         }
 
-        # Map persona to lora names if persona is provided (case-insensitive)
-        if kol_persona:
-            # Find persona with case-insensitive matching
-            persona_config = None
-            matched_persona = None
+        if is_turbo:
+            # TURBO WORKFLOW LOGIC
+            cleaned_prompt = re.sub(r'<lora:[^>]+>,\s*Instagirl,?\s*', '', positive_prompt, flags=re.IGNORECASE)
             
-            for persona_key in PERSONA_LORA_MAPPING.keys():
-                if persona_key.lower() == kol_persona.lower():
-                    persona_config = PERSONA_LORA_MAPPING[persona_key]
-                    matched_persona = persona_key
-                    break
+            logger.info(f"📝 Original Prompt: {positive_prompt[:100]}...")
+            logger.info(f"📝 Cleaned Prompt: {cleaned_prompt[:200]}{'...' if len(cleaned_prompt) > 200 else ''}")
             
-            if persona_config:
-                payload["input_overrides"]["persona_low_lora_name"] = persona_config["persona_low_lora_name"]
-                payload["input_overrides"]["persona_high_lora_name"] = persona_config["persona_high_lora_name"]
-                logger.info(f"🎭 Persona LoRA Mapping Applied ('{kol_persona}' → '{matched_persona}'):")
-                logger.info(f"   Low Noise: {persona_config['persona_low_lora_name']}")
-                logger.info(f"   High Noise: {persona_config['persona_high_lora_name']}")
-            else:
-                logger.warning(f"⚠️  Unknown persona '{kol_persona}' - available personas: {list(PERSONA_LORA_MAPPING.keys())}")
-        else:
-            logger.warning("⚠️  No persona specified - using default LoRA settings")
+            payload["overwritable_inputs"] = {
+                "positive_prompt": {
+                    "field": "45.inputs.text",
+                    "dtype": "str"
+                },
+                "persona_lora_name": {
+                    "field": "53.inputs.lora_name",
+                    "dtype": "str"
+                }
+            }
+            payload["input_overrides"] = {
+                "positive_prompt": cleaned_prompt,
+                "persona_lora_name": ""
+            }
 
-        logger.info(f"📋 Workflow ID: {DEFAULT_WORKFLOW_ID}")
+            if kol_persona:
+                persona_lora = None
+                for persona_key in PERSONA_LORA_MAPPING_TURBO.keys():
+                    if persona_key.lower() == kol_persona.lower():
+                        persona_lora = PERSONA_LORA_MAPPING_TURBO[persona_key]
+                        break
+                
+                if persona_lora:
+                    payload["input_overrides"]["persona_lora_name"] = persona_lora
+                    logger.info(f"🎭 Turbo LoRA Applied: {persona_lora}")
+                else:
+                    logger.warning(f"⚠️  Unknown/Pending Persona for Turbo: {kol_persona}")
+        
+        else:
+            # WAN2.2 WORKFLOW LOGIC (Old logic)
+            logger.info(f"📝 Positive Prompt: {positive_prompt[:200]}...")
+            logger.info(f"🚫 Negative Prompt: {negative_prompt[:100]}...")
+
+            payload["input_overrides"] = {
+                "positive_prompt": positive_prompt,
+                "negative_prompt": negative_prompt,
+                "persona_low_lora_name": "",
+                "persona_high_lora_name": ""
+            }
+
+            if kol_persona:
+                persona_config = None
+                for persona_key in PERSONA_LORA_MAPPING_WAN.keys():
+                    if persona_key.lower() == kol_persona.lower():
+                        persona_config = PERSONA_LORA_MAPPING_WAN[persona_key]
+                        break
+                
+                if persona_config:
+                    payload["input_overrides"]["persona_low_lora_name"] = persona_config["low"]
+                    payload["input_overrides"]["persona_high_lora_name"] = persona_config["high"]
+                    logger.info(f"🎭 WAN LoRA Applied: Low={persona_config['low']}, High={persona_config['high']}")
+                else:
+                    logger.warning(f"⚠️  Unknown Persona for WAN: {kol_persona}")
+
+        logger.info(f"📋 Workflow ID: {workflow_id}")
         logger.info(f"🌐 API URL: {self.api_url}")
         logger.info(f"⏱️  Timeout: {self.timeout}s, Max Poll Time: {self.max_poll_time}s")
         logger.debug(f"📦 Full Payload: {json.dumps(payload, indent=2)}")

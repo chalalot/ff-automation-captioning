@@ -28,6 +28,22 @@ class ImageToPromptWorkflow:
             "long dark brown hair",
             "long dark brown hair, slightly damp, sunlit reflections",
             "long dark straight hair, slightly wet and sun-lit, strands clinging softly to her shoulder"
+        ],
+        "Mika": [
+            "Korean see-through bangs over forehead, effortless chic messy bun hairstyle",
+            "long black hair styled in an elegant updo, parted slightly off-center, some loose strands framing face, smooth and neat with natural shine"
+        ],
+        "Nya": [
+            "long curly chestnut hair reaching her chest",
+            "long dark brown hair, styled in loose curls, parted at center, voluminous waves framing face"
+        ],
+        "Emi": [
+            "short platinum blonde bob with messy layered waves, volumized hair, layered hairstyle, dynamic hair flow, hair shine enhancement, side part hairstyle, deep side part, one side tucked behind ear, asymmetrical hairstyle"
+        ],
+        "Roxie": [
+            "thick and strong, long wavy pastel pink hair parted at the center, styled with two space buns on top of the head, and soft straight bangs covering the forehead",
+            "long straight pastel hair cascading down the back, glossy texture reflecting key light.",
+            "long straight platinum white hair cascading down back, glossy texture reflecting light."
         ]
     }
 
