@@ -81,6 +81,8 @@ class GlobalConfig:
 
     # ComfyUI API Settings
     COMFYUI_API_URL = os.getenv("COMFYUI_API_URL", "https://comfy-api.ez-agi.com")
+    CLOUD_COMFY_API_URL = os.getenv("CLOUD_COMFY_API_URL", "https://api.comfy.org/api/v1")
+    COMFYUI_API_KEY = os.getenv("COMFYUI_API_KEY")
     COMFYUI_API_TIMEOUT = int(os.getenv("COMFYUI_API_TIMEOUT", "1000"))  # Request timeout (httpx client timeout)
     COMFYUI_POLL_INTERVAL = int(os.getenv("COMFYUI_POLL_INTERVAL", "5"))  # Check status every 5 seconds
     COMFYUI_MAX_POLL_TIME = int(os.getenv("COMFYUI_MAX_POLL_TIME", "3600"))  # Max time to wait for completion (1 hour)
@@ -124,6 +126,11 @@ class GlobalConfig:
     AWS_BUCKET = os.getenv("AWS_BUCKET", "mkt-agent-public")
 
 
+    # Storage Directories (Mounted Volumes)
+    INPUT_DIR = os.getenv("INPUT_DIR", "Sorted")
+    PROCESSED_DIR = os.getenv("PROCESSED_DIR", "processed")
+    OUTPUT_DIR = os.getenv("OUTPUT_DIR", "results")
+
     @classmethod
     def get_sqlite_connect_args(cls):
         """Get the connect_args for SQLite connections"""
@@ -133,5 +140,3 @@ class GlobalConfig:
                 "timeout": cls.SQLITE_TIMEOUT # Use the class attribute
             }
         return {}
-
-

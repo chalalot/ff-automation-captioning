@@ -1,1 +1,0 @@
-Unable to provide the analysis as the Vision Tool did not return the required information.

@@ -47,6 +47,129 @@ class ImageToPromptWorkflow:
         ]
     }
 
+    PERSONA_HAIR_COLORS = {
+        "Jennie": "Honey-blonde",
+        "Sephera": "Dark brown",
+        "Mika": "Black",
+        "Nya": "Chestnut",
+        "Emi": "Platinum blonde",
+        "Roxie": "Pastel pink"
+    }
+
+    TURBO_PROMPT_TEMPLATE = """
+Here is the systematic translation of your prompt framework and feedback summary.
+
+---
+
+Below is a systematic summary, drawn accurately from our entire conversation without further inference.
+
+## I. Characteristics/Elements for Prompts (Your Implicit Framework)
+
+### 1. Workflow & Model Foundation
+
+* **Main Model:** Z-image Turbo
+* **Persona LoRA:** Enabled
+* **DO NOT describe:** Face, skin tone, or personal identity.
+* **Prompt focuses only on:** Pose, Outfit, Camera Angle, Lighting, Color Tone, Environment, and Expression.
+
+### 2. Prompt Structure Requirements
+
+* **Length:** 80–250 words.
+* **Style:**
+* Long & precise ✅
+* Long & vague ❌
+
+* **Content:** Use 3–5 key visual concepts.
+* **No separate negative prompts:** Convert all negatives into **positive logic**.
+* ❌ Instead of “no blur”
+* ✅ Use “sharp focus”
+
+* **Forbidden phrases:** “close like the reference” or “similar to the reference” (The model has no memory of the reference image).
+
+### 3. Core Analysis Groups
+
+**A. Pose & Body Logic (Crucial)**
+
+* The pose is the “soul of the image.”
+* **Must maintain:** Body axis, S-curve, hand placement, and weight distribution.
+* **Emphasize:** Small waist, deep waist curve, rounded hips, straight/slender legs.
+* **Proportions:** Must be natural (avoid exaggerated AI proportions).
+
+**B. Camera & Framing**
+
+* **Angles:** Front, side, ¾, or near-back (not absolute back).
+* **Camera Height:** Eye-level or slightly low angle.
+* **Distance:** Medium shot, upper-body, or waist-up.
+* ❌ **Avoid:** Vague or generic camera descriptions.
+
+**C. Outfit (High Detail & Strict)**
+
+* **Accuracy:** Specific garment types (e.g., jeans ≠ pants ≠ leather pants).
+* **Fit:** No "fitted" unless requested; avoid unintended tight chest rendering.
+* **Material:** Focus on modern, fresh denim; no distressed or vintage looks unless specified.
+* ❌ **Avoid:** Unintended bras appearing or clothing rendered too thin/clinging.
+
+**D. Hair**
+
+* **Description:** Clear style (straight, wavy, tied, or loose) and state (neat or natural).
+* **Color:** **{hair_color}** is mandatory; no tone deviations allowed.
+
+**E. Facial Expression**
+
+* **Vibe:** Calm, confident, aloof, relaxed, or soft.
+* ❌ **Avoid:** Generic smiles, sexy exaggeration, or expressions that don't match the pose.
+
+**F. Lighting & Color Tone (High Sensitivity)**
+
+* **Avoid:** Strong Depth of Field (DOF), cinematic lighting, or looks that are too “clean” and “perfect.”
+* **Prioritize:** Everyday lighting, slightly uneven, textured, with minor imperfections.
+* **Goal:** Daily realistic photography; reduce the need for post-processing or filter apps.
+
+---
+
+## II. Errors Made & Correction Requirements
+
+### 1. Reference Logic Errors
+
+* ❌ **Mistake:** Using phrases like “close like the reference.”
+* ❌ **Mistake:** Editing a prompt based on an old reference after a new one has been provided.
+* ✅ **Requirement:** Complete reset; write the prompt based **only** on the current reference image.
+
+### 2. Camera & Angle Errors
+
+* ❌ **Mistake:** Vague descriptions regarding near-back angles, which side of the face is showing, or camera height.
+* ✅ **Requirement:** Record the viewing angle precisely (but not as an absolute 180° back) and ensure it is logical for the pose.
+
+### 3. Outfit Errors
+
+* ❌ **Mistake:** Failing to specify "jeans," allowing unintended distressing, or incorrect fitting (e.g., unintended black bras).
+* ✅ **Requirement:** Explicitly describe material, form, and the degree of tightness.
+
+### 4. Hair Errors
+
+* ❌ **Mistake:** Simply saying “blonde” without style or flow details.
+* ✅ **Requirement:** Detailed hair descriptions (style + how it falls).
+
+### 5. Expression Errors
+
+* ❌ **Mistake:** Generic expressions or those that don't match the context/pose.
+* ✅ **Requirement:** Focus on "Calm" and "Confident"; avoid sexualization or default smiles.
+
+### 6. Critical Error: "AI-looking" Results
+
+* ❌ **Mistake:** Using "DOF" or "clean and natural color tone."
+* ❌ **Result:** Images that are too perfect/AI-rendered.
+* ✅ **Requirement:** Remove DOF, retain imperfections, maintain texture, and emphasize a **“lived-in look.”**
+
+---
+
+**Example Output (Follow this format, NOT keywords):**
+A realistic outdoor photograph of a young beautiful girl around 22–23 years old leaning against the edge of a swimming pool during daytime. The camera is positioned slightly below eye level, facing her from the front, creating a gentle low-angle perspective that emphasizes the upper body and torso. She supports herself with both hands placed behind her on the pool edge, allowing her shoulders to open and her body to lean back subtly, naturally highlighting a slim waist with a deep inward curve, a flat abdomen, and rounded hips.
+Her hair is {hair_color}, worn long and loose with a lightly damp texture, falling naturally over her shoulders and chest. The strands appear soft and relaxed, with a slight natural part and no heavy styling or added volume.
+She is wearing a two-piece bikini in a dark, subtly iridescent tone, with thin straps and side ties at the hips. The fabric catches sunlight gently, showing a soft sheen without looking glossy or artificial. Her expression is relaxed and candid, with her mouth slightly open and lips loose, conveying a playful yet calm summer moment rather than a posed look.
+The setting features clear turquoise pool water and a neutral architectural background. Natural sunlight illuminates the scene evenly, creating soft highlights on skin and water with clean shadows. The color tone stays bright and fresh, with warm skin highlights, vivid pool blues, and balanced contrast. Sharp focus, realistic texture, natural depth of field, no cinematic grading, no heavy filters.
+"""
+
     def __init__(self, verbose: bool = True):
         self.verbose = verbose
         # Initialize agents
@@ -97,13 +220,14 @@ class ImageToPromptWorkflow:
             llm="gpt-4o"
         )
 
-    async def process(self, image_path: str, persona_name: str = "Jennie") -> Dict[str, str]:
+    async def process(self, image_path: str, persona_name: str = "Jennie", workflow_type: str = "turbo") -> Dict[str, str]:
         """
         Run the workflow for a single image.
         
         Args:
             image_path: Path to local image file.
             persona_name: Name of the persona (e.g. "Jennie").
+            workflow_type: Type of workflow ("turbo" or "wan2.2").
             
         Returns:
             A dictionary containing the reference image path and the generated prompt.
@@ -111,25 +235,12 @@ class ImageToPromptWorkflow:
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Image not found at {image_path}")
 
-        print(f"\n📸 Starting Workflow for: {image_path} (Persona: {persona_name})")
+        print(f"\n📸 Starting Workflow for: {image_path} (Persona: {persona_name}, Workflow: {workflow_type})")
 
         # Determine hairstyles based on persona
         persona_key = next((k for k in self.PERSONA_HAIRSTYLES.keys() if k.lower() == persona_name.lower()), "Jennie")
         available_hairstyles = self.PERSONA_HAIRSTYLES[persona_key]
         
-        # Determine hairstyle instruction
-        if persona_name.lower() == "sephera":
-             hairstyle_instruction = f"""
-               - You MUST choose ONE from this list explicitly (Do not invent others):
-               {available_hairstyles}
-             """
-        else:
-             hairstyle_instruction = f"""
-               - PRIORITY: Use the hairstyle exactly as described in the reference image analysis if it is clear and distinct.
-               - FALLBACK: If the reference hair is unclear, choose ONE from this list:
-               {available_hairstyles}
-             """
-
         # Task 1: Analyze
         analyze_task = Task(
             description=f"""
@@ -153,35 +264,63 @@ class ImageToPromptWorkflow:
         )
 
         # Task 2: Generate Prompt
-        generate_prompt_task = Task(
-            description=f"""
-            Create a final Image Generation Prompt based on the analysis.
-             
-            **MANDATORY RULES:**
-            1. **Prefix**: Start with "<lora:{persona_name.lower()}>, Instagirl," (Adjust trigger word if needed for other personas).
-            2. **Subject**: "the girl (22-23 years old)"
-            3. **Hairstyle**: 
-               {hairstyle_instruction}
-            4. **Camera & Orientation**: You MUST include the specific **Camera Angle** and **Head Direction** keywords from the analysis (e.g., "low angle", "looking back", "profile view").
-            5. **Outfit**: You MUST include specific keywords describing the outfit from the analysis (colors, textures, fit, specific items).
-            6. **Background**: You MUST include specific keywords describing the background and setting from the analysis (location, props, lighting).
-            7. **Length Constraint**: The final output MUST be between 700 and 800 characters long. To achieve this, provide VERY detailed descriptions of the outfit, textures, background, lighting, and atmosphere, while maintaining the comma-separated keyword format.
+        if workflow_type.lower() == "turbo":
+            # Determine hair color for Turbo
+            hair_color = self.PERSONA_HAIR_COLORS.get(persona_key, "Honey-blonde")
             
-            **STYLE INSTRUCTIONS:**
-            - **Vibe**: Daily, casual, authentic. NOT cinematic.
-            - **Skin**: Realistic, natural. AVOID "soft pores", "smooth", "glowy".
-            - **Detail**: Comprehensive detail on outfit, pose, textures, background, and lighting to meet the length requirement.
+            prompt_instruction = self.TURBO_PROMPT_TEMPLATE.format(hair_color=hair_color)
             
-            **OUTPUT FORMAT**:
-            Comma-separated keywords only.
+            generate_prompt_task = Task(
+                description=prompt_instruction,
+                expected_output="A detailed paragraph describing the image, approximately 80-250 words.",
+                agent=self.engineer,
+                context=[analyze_task]
+            )
+        else:
+            # WAN2.2 (Legacy/Default) Logic
             
-            **Example**:
-            "<lora:{persona_name.lower()}>, Instagirl, low angle shot, looking back over shoulder, the girl (22-23 years old), [HAIRSTYLE_FROM_IMAGE], wearing white t-shirt, blue denim jeans, standing in a cafe, wooden table, coffee cup, natural lighting, realistic skin texture, daily photography, casual vibe..." (ensure length is 700-800 chars)
-            """,
-            expected_output="A single text string of comma-separated keywords, approximately 700-800 characters in length.",
-            agent=self.engineer,
-            context=[analyze_task]
-        )
+            # Determine hairstyle instruction
+            if persona_name.lower() == "sephera":
+                 hairstyle_instruction = f"""
+                   - You MUST choose ONE from this list explicitly (Do not invent others):
+                   {available_hairstyles}
+                 """
+            else:
+                 hairstyle_instruction = f"""
+                   - PRIORITY: Use the hairstyle exactly as described in the reference image analysis if it is clear and distinct.
+                   - FALLBACK: If the reference hair is unclear, choose ONE from this list:
+                   {available_hairstyles}
+                 """
+
+            generate_prompt_task = Task(
+                description=f"""
+                Create a final Image Generation Prompt based on the analysis.
+                 
+                **MANDATORY RULES:**
+                1. **Prefix**: Start with "<lora:{persona_name.lower()}>, Instagirl," (Adjust trigger word if needed for other personas).
+                2. **Subject**: "the girl (22-23 years old)"
+                3. **Hairstyle**: 
+                   {hairstyle_instruction}
+                4. **Camera & Orientation**: You MUST include the specific **Camera Angle** and **Head Direction** keywords from the analysis (e.g., "low angle", "looking back", "profile view").
+                5. **Outfit**: You MUST include specific keywords describing the outfit from the analysis (colors, textures, fit, specific items).
+                6. **Background**: You MUST include specific keywords describing the background and setting from the analysis (location, props, lighting).
+                7. **Length Constraint**: The final output MUST be between 700 and 800 characters long. To achieve this, provide VERY detailed descriptions of the outfit, textures, background, lighting, and atmosphere, while maintaining the comma-separated keyword format.
+                
+                **STYLE INSTRUCTIONS:**
+                - **Vibe**: Daily, casual, authentic. NOT cinematic.
+                - **Skin**: Realistic, natural. AVOID "soft pores", "smooth", "glowy".
+                - **Detail**: Comprehensive detail on outfit, pose, textures, background, and lighting to meet the length requirement.
+                
+                **OUTPUT FORMAT**:
+                Comma-separated keywords only.
+                
+                **Example**:
+                "<lora:{persona_name.lower()}>, Instagirl, low angle shot, looking back over shoulder, the girl (22-23 years old), [HAIRSTYLE_FROM_IMAGE], wearing white t-shirt, blue denim jeans, standing in a cafe, wooden table, coffee cup, natural lighting, realistic skin texture, daily photography, casual vibe..." (ensure length is 700-800 chars)
+                """,
+                expected_output="A single text string of comma-separated keywords, approximately 700-800 characters in length.",
+                agent=self.engineer,
+                context=[analyze_task]
+            )
 
         # Run Crew
         crew = Crew(

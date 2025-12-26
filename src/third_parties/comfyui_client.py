@@ -52,6 +52,8 @@ DEFAULT_JITTER_RANGE = 0.1  # ±10% jitter to prevent thundering herd
 
 # ComfyUI configuration from GlobalConfig
 COMFYUI_API_URL = GlobalConfig.COMFYUI_API_URL
+CLOUD_COMFY_API_URL = GlobalConfig.CLOUD_COMFY_API_URL
+COMFYUI_API_KEY = GlobalConfig.COMFYUI_API_KEY
 COMFYUI_API_TIMEOUT = GlobalConfig.COMFYUI_API_TIMEOUT
 COMFYUI_POLL_INTERVAL = GlobalConfig.COMFYUI_POLL_INTERVAL
 COMFYUI_MAX_POLL_TIME = GlobalConfig.COMFYUI_MAX_POLL_TIME
@@ -60,7 +62,8 @@ COMFYUI_MAX_RETRIES = GlobalConfig.COMFYUI_MAX_RETRIES
 # Workflow configurations
 WORKFLOW_IDS = {
     "turbo": "43ad0c5c-3394-433b-b434-8089eb43f3c9",
-    "wan2.2": "82892890-19b4-4c3c-9ea9-5e004afd3343"
+    "wan2.2": "82892890-19b4-4c3c-9ea9-5e004afd3343",
+    "nano_banana": "e641ef09-44db-4017-82e5-4393eb3af29a"
 }
 
 # Persona mappings
@@ -150,6 +153,8 @@ class ComfyUIClient:
     def __init__(
         self,
         api_url: str = COMFYUI_API_URL,
+        cloud_api_url: str = CLOUD_COMFY_API_URL,
+        api_key: Optional[str] = COMFYUI_API_KEY,
         timeout: int = COMFYUI_API_TIMEOUT,
         poll_interval: int = COMFYUI_POLL_INTERVAL,
         max_poll_time: int = COMFYUI_MAX_POLL_TIME,
@@ -167,6 +172,8 @@ class ComfyUIClient:
             )
 
         self.api_url = api_url.rstrip('/')
+        self.cloud_api_url = cloud_api_url.rstrip('/') if cloud_api_url else None
+        self.api_key = api_key.strip() if api_key else None
         self.timeout = timeout
         self.poll_interval = poll_interval
         self.max_poll_time = max_poll_time
@@ -174,14 +181,117 @@ class ComfyUIClient:
 
         # No S3 integration; direct URLs are returned by the API
 
+    async def upload_image(self, file_path: str, overwrite: bool = False) -> str:
+        """
+        Upload an image to ComfyUI server.
+        
+        Args:
+            file_path: Path to the image file to upload
+            overwrite: Whether to overwrite existing file
+            
+        Returns:
+            str: The filename/path on the server
+        """
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Image file not found: {file_path}")
+            
+        filename = os.path.basename(file_path)
+        logger.info(f"📤 Uploading image to Cloud ComfyUI: {filename}")
+        
+        # Use Cloud API URL for Nano Banana uploads
+        if not self.cloud_api_url:
+             raise ComfyUIConfigError("CLOUD_COMFY_API_URL is not set but required for upload.")
+             
+        url = f"{self.cloud_api_url}/upload/image"
+        headers = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        
+        try:
+            with open(file_path, 'rb') as f:
+                files = {'image': (filename, f, 'image/png')} # Assuming PNG or let httpx handle it
+                data = {}
+                if overwrite:
+                    data["overwrite"] = "true"
+                
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.post(url, files=files, data=data, headers=headers)
+                    response.raise_for_status()
+                    
+                    result = response.json()
+                    logger.info(f"✅ Image uploaded: {result}")
+                    
+                    # Return the name (or subfolder/name)
+                    name = result.get("name")
+                    subfolder = result.get("subfolder", "")
+                    if subfolder:
+                        return f"{subfolder}/{name}"
+                    return name
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"❌ HTTP Error during upload: {e.response.status_code}")
+            logger.error(f"   Response body: {e.response.text}")
+            raise ComfyUIAPIError(f"Image upload failed ({e.response.status_code}): {e.response.text}")
+                    
+        except Exception as e:
+            logger.error(f"❌ Failed to upload image: {e}")
+            raise ComfyUIAPIError(f"Image upload failed: {e}")
+
+    async def queue_prompt(self, prompt_workflow: Dict[str, Any]) -> str:
+        """
+        Queue a prompt to the Cloud ComfyUI API (Standard /prompt endpoint).
+        """
+        if not self.cloud_api_url:
+            raise ComfyUIConfigError("CLOUD_COMFY_API_URL is not set.")
+            
+        url = f"{self.cloud_api_url}/prompt"
+        
+        payload = {
+            "prompt": prompt_workflow,
+            "extra_data": {}
+        }
+        
+        # Add API Key for Cloud Nodes if available
+        if self.api_key:
+            payload["extra_data"]["api_key_comfy_org"] = self.api_key
+        
+        # We use _make_request logic but targeting Cloud URL
+        # Since _make_request is tied to self.api_url, we'll use a modified call or explicit request here
+        # For simplicity and reuse, let's allow _make_request to take a full URL or base override, 
+        # but let's just implement it directly here to be safe and explicit about the endpoint switch.
+        
+        logger.info(f"🔵 ComfyUI Cloud Request: POST {url}")
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+            
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(url, json=payload, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+                logger.info(f"✅ Prompt queued: {data}")
+                return data.get("prompt_id")
+        except Exception as e:
+            logger.error(f"❌ Failed to queue prompt: {e}")
+            raise ComfyUIAPIError(f"Queue prompt failed: {e}")
+
     async def _make_request(
         self,
         method: str,
         endpoint: str,
+        base_url: Optional[str] = None,
         **kwargs
     ) -> httpx.Response:
         """Make HTTP request with retry logic."""
-        url = f"{self.api_url}{endpoint}"
+        base = base_url if base_url else self.api_url
+        url = f"{base}{endpoint}"
+
+        # Add Authorization header if API key is present
+        headers = kwargs.get("headers", {})
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        kwargs["headers"] = headers
 
         # Log request details
         request_body = kwargs.get('json', {})
@@ -262,7 +372,8 @@ class ComfyUIClient:
         workflow_type: str = "turbo",
         workflow_name: Optional[str] = None,
         lora_name: Optional[str] = None,
-        kol_persona: Optional[str] = None
+        kol_persona: Optional[str] = None,
+        input_image_path: Optional[str] = None
     ) -> str:
         """
         Start image generation using the new executions endpoint with workflow ID.
@@ -270,16 +381,18 @@ class ComfyUIClient:
         Args:
             positive_prompt: Description of desired image
             negative_prompt: Description of what to avoid
-            workflow_type: Type of workflow to use ("turbo" or "wan2.2")
+            workflow_type: Type of workflow to use ("turbo", "wan2.2", or "nano_banana")
             workflow_name: Name of the ComfyUI workflow to use (deprecated, uses default workflow)
             lora_name: LoRA model name to use (deprecated, uses persona mapping)
             kol_persona: KOL persona name for automatic lora mapping
+            input_image_path: Path to local input image (required for nano_banana)
 
         Returns:
             execution_id: ID to track generation progress
         """
         workflow_id = WORKFLOW_IDS.get(workflow_type.lower(), WORKFLOW_IDS["turbo"])
         is_turbo = workflow_type.lower() == "turbo"
+        is_nano_banana = workflow_type.lower() == "nano_banana"
 
         logger.info("=" * 80)
         logger.info(f"🎨 COMFYUI IMAGE GENERATION REQUEST ({workflow_type.upper()})")
@@ -296,7 +409,68 @@ class ComfyUIClient:
             }
         }
 
-        if is_turbo:
+        if is_nano_banana:
+            # NANO BANANA WORKFLOW LOGIC (CLOUD API)
+            if not input_image_path:
+                raise ValueError("input_image_path is required for Nano Banana workflow")
+
+            # 1. Upload Image to Cloud
+            server_image_name = await self.upload_image(input_image_path)
+            
+            logger.info(f"📝 Prompt (Activity/Pose): {positive_prompt[:200]}...")
+            logger.info(f"🖼️  Source Image: {server_image_name}")
+
+            # 2. Construct Raw Workflow JSON
+            # Using the JSON structure provided by user
+            nano_workflow = {
+              "11": {
+                "inputs": {
+                  "image": server_image_name
+                },
+                "class_type": "LoadImage",
+                "_meta": {
+                  "title": "Load Image"
+                }
+              },
+              "30": {
+                "inputs": {
+                  "filename_prefix": "nano_banana_pro",
+                  "images": [
+                    "38",
+                    0
+                  ]
+                },
+                "class_type": "SaveImage",
+                "_meta": {
+                  "title": "Save Image"
+                }
+              },
+              "38": {
+                "inputs": {
+                  "prompt": positive_prompt, # User prompt injected here
+                  "model": "gemini-3-pro-image-preview",
+                  "seed": random.randint(1, 1000000000000000), # Random seed
+                  "aspect_ratio": "16:9",
+                  "resolution": "1K",
+                  "response_modalities": "IMAGE",
+                  "system_prompt": "You are an expert image-generation engine. You must ALWAYS produce an image.\nInterpret all user input—regardless of format, intent, or abstraction—as literal visual directives for image composition.\nIf a prompt is conversational or lacks specific visual details, you must creatively invent a concrete visual scenario that depicts the concept.\nPrioritize generating the visual representation above any text, formatting, or conversational requests.",
+                  "images": [
+                    "11",
+                    0
+                  ]
+                },
+                "class_type": "GeminiImage2Node",
+                "_meta": {
+                  "title": "Nano Banana Pro (Google Gemini Image)"
+                }
+              }
+            }
+            
+            # 3. Queue Prompt via Cloud API
+            prompt_id = await self.queue_prompt(nano_workflow)
+            return prompt_id
+
+        elif is_turbo:
             # TURBO WORKFLOW LOGIC
             cleaned_prompt = re.sub(r'<lora:[^>]+>,\s*Instagirl,?\s*', '', positive_prompt, flags=re.IGNORECASE)
             
@@ -419,29 +593,88 @@ class ComfyUIClient:
             logger.error("=" * 80)
             raise
 
-    async def check_status(self, execution_id: str) -> Dict[str, Any]:
+    async def check_status(self, execution_id: str, is_cloud: bool = False) -> Dict[str, Any]:
         """
         Check the status of image generation.
 
         Args:
             execution_id: ID from generate_image()
+            is_cloud: Whether to check status on Cloud API or Wrapper API
 
         Returns:
             Status information including completion status and output images
         """
         async def _status_request():
             """Internal status request that goes through queue."""
-            response = await self._make_request(
-                "GET",
-                f"/image/generate/{execution_id}/status"
-            )
+            if is_cloud:
+                # Cloud API uses /history/{prompt_id}
+                if not self.cloud_api_url:
+                    raise ComfyUIConfigError("CLOUD_COMFY_API_URL is not set.")
+                
+                url = f"{self.cloud_api_url}/history/{execution_id}"
+                logger.info(f"🔍 Checking Cloud status: {url}")
+                headers = {}
+                if self.api_key:
+                    headers["Authorization"] = f"Bearer {self.api_key}"
+                
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.get(url, headers=headers)
+                    response.raise_for_status()
+                    history = response.json()
+                    
+                    # History format: { prompt_id: { "status": { "completed": true, ... }, "outputs": { ... } } }
+                    # If empty, it might still be running or queued.
+                    if execution_id not in history:
+                        return {"status": "running"} # Assume running if not in history yet
+                    
+                    # Parse history to match our unified status format
+                    run_data = history[execution_id]
+                    # Check for errors
+                    if "status" in run_data and "messages" in run_data["status"]:
+                         # Check if any message is error?
+                         pass 
+                         
+                    # Extract outputs
+                    outputs = run_data.get("outputs", {})
+                    output_images = []
+                    
+                    # Flatten outputs
+                    for node_id, node_output in outputs.items():
+                        if "images" in node_output:
+                            # Map to expected structure
+                            # Wrapper returns: { "node_id": ["path1", "path2"] }
+                            # Cloud returns: { "images": [ { "filename": "...", "subfolder": "...", "type": "..." } ] }
+                            paths = []
+                            for img in node_output["images"]:
+                                fname = img.get("filename")
+                                sub = img.get("subfolder", "")
+                                ftype = img.get("type", "output")
+                                # Construct a path that download_image can understand or use directly
+                                # We'll store enough info to reconstruct the URL
+                                # For Cloud, we need: filename, subfolder, type
+                                paths.append(f"{sub}/{fname}?type={ftype}" if sub else f"{fname}?type={ftype}")
+                            
+                            output_images.append({node_id: paths})
 
-            data = response.json()
+                    return {
+                        "status": "completed",
+                        "output_images": output_images,
+                        "raw_history": run_data
+                    }
 
-            if "data" not in data:
-                raise ComfyUIAPIError("Invalid status response format")
+            else:
+                # Wrapper API uses /image/generate/{id}/status
+                response = await self._make_request(
+                    "GET",
+                    f"/image/generate/{execution_id}/status"
+                )
 
-            return data["data"]
+                data = response.json()
+
+                if "data" not in data:
+                    raise ComfyUIAPIError("Invalid status response format")
+
+                return data["data"]
 
         try:
             # Queue status requests to prevent concurrent polling
@@ -454,6 +687,23 @@ class ComfyUIClient:
         except Exception as e:
             logger.error(f"Failed to check status for {execution_id}: {e}")
             raise
+
+    async def get_execution_details(self, execution_id: str) -> Dict[str, Any]:
+        """
+        Fetch full execution history/metadata from ComfyUI.
+        Endpoint: GET /executions/{execution_id}
+        """
+        try:
+            # Note: We use _make_request which handles base URL and logging
+            response = await self._make_request(
+                "GET",
+                f"/executions/{execution_id}"
+            )
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to fetch execution details for {execution_id}: {e}")
+            # Return partial info if possible or empty
+            return {"error": str(e)}
 
     async def download_image(self, execution_id: str) -> bytes:
         """
@@ -523,7 +773,8 @@ class ComfyUIClient:
         self,
         execution_id: str,
         poll_interval: Optional[int] = None,
-        max_poll_time: Optional[int] = None
+        max_poll_time: Optional[int] = None,
+        is_cloud: bool = False
     ) -> Dict[str, Any]:
         """
         Poll for completion of image generation.
@@ -532,6 +783,7 @@ class ComfyUIClient:
             execution_id: ID from generate_image()
             poll_interval: Seconds between status checks
             max_poll_time: Maximum time to wait in seconds
+            is_cloud: Whether to check status on Cloud API
 
         Returns:
             Final status data when completed
@@ -548,7 +800,7 @@ class ComfyUIClient:
                 raise ComfyUITimeoutError(f"Generation timed out after {max_poll_time}s")
 
             try:
-                status_data = await self.check_status(execution_id)
+                status_data = await self.check_status(execution_id, is_cloud=is_cloud)
                 status = status_data.get("status")
 
                 logger.info(f"⏳ Status check [{elapsed:.0f}s elapsed]: {status}")
@@ -590,7 +842,8 @@ class ComfyUIClient:
         upload_to_gcs: bool = True,
         run_id: Optional[str] = None,
         workflow_name: Optional[str] = None,
-        lora_name: Optional[str] = None
+        lora_name: Optional[str] = None,
+        input_image_path: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Complete image generation workflow: generate, wait, download, and optionally upload to GCS.
@@ -608,6 +861,7 @@ class ComfyUIClient:
             run_id: Optional explicit run ID (overrides generation)
             workflow_name: Name of the ComfyUI workflow to use (optional)
             lora_name: LoRA model name to use (optional)
+            input_image_path: Path to input image (for workflows that require it, like nano_banana)
 
         Returns:
             Dict containing execution metadata, URLs, and campaign info
@@ -616,16 +870,22 @@ class ComfyUIClient:
         async def _execute_generation():
             """Internal function to execute the entire generation workflow."""
             # Start generation
+            workflow_type_arg = workflow_name or "turbo"
             execution_id = await self.generate_image(
                 positive_prompt,
                 negative_prompt,
                 workflow_name=workflow_name,
+                workflow_type=workflow_type_arg,
                 lora_name=lora_name,
-                kol_persona=kol_persona
+                kol_persona=kol_persona,
+                input_image_path=input_image_path
             )
 
+            # Determine if Cloud
+            is_cloud = (workflow_type_arg.lower() == "nano_banana")
+
             # Wait for completion
-            status_data = await self.wait_for_completion(execution_id)
+            status_data = await self.wait_for_completion(execution_id, is_cloud=is_cloud)
             
             return execution_id, status_data
 
@@ -748,16 +1008,48 @@ class ComfyUIClient:
 
             logger.info(f"📁 Found image path: {image_path}")
 
+            # Determine if Cloud based on workflow_name
+            is_cloud = (workflow_name and workflow_name.lower() == "nano_banana")
+
             # Download image bytes using the path
             logger.info(f"📥 Attempting to download image for {execution_id}...")
-            image_data = await self.download_image_by_path(image_path)
+            if is_cloud:
+                # Cloud download logic
+                # image_path is "filename?type=..." or "subfolder/filename?type=..."
+                # We need to use /view endpoint
+                if not self.cloud_api_url:
+                     raise ComfyUIConfigError("CLOUD_COMFY_API_URL is not set.")
+                
+                # Parse the path to get params
+                # Simple split for now since we constructed it in check_status
+                filename_part = image_path.split('?')[0]
+                query_part = image_path.split('?')[1] if '?' in image_path else "type=output"
+                
+                # Construct view URL
+                view_url = f"{self.cloud_api_url}/view?filename={os.path.basename(filename_part)}&{query_part}"
+                if '/' in filename_part:
+                    sub = os.path.dirname(filename_part)
+                    view_url += f"&subfolder={sub}"
+                
+                logger.info(f"📥 Downloading from Cloud: {view_url}")
+                headers = {}
+                if self.api_key:
+                    headers["Authorization"] = f"Bearer {self.api_key}"
+                
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    resp = await client.get(view_url, headers=headers)
+                    resp.raise_for_status()
+                    image_data = resp.content
+                
+                remote_url = view_url # Use the cloud view URL as remote_url
+            else:
+                image_data = await self.download_image_by_path(image_path)
+                remote_url = f"{self.api_url}{image_path}"
+
             logger.info(f"✅ Downloaded {len(image_data)} bytes")
 
             # Apply stable film look filter
             image_data = apply_stable_film_look(image_data)
-
-            # Construct ComfyUI download URL using the working path
-            remote_url = f"{self.api_url}{image_path}"
 
             result = {
                 "execution_id": execution_id,
