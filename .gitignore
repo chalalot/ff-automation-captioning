@@ -2,3 +2,5 @@
 results/
 processed/
 __pycache__/
+image_logs.db
+.env

@@ -39,7 +39,7 @@ st.title("🚀 CrewAI Image-to-Prompt Workflow")
 st.sidebar.header("Configuration")
 kol_persona = st.sidebar.selectbox("KOL Persona", ["Jennie", "Sephera", "Mika", "Nya", "Emi", "Roxie"])
 workflow_choice = st.sidebar.selectbox("Workflow Type", ["Turbo", "WAN2.2"])
-limit_choice = st.sidebar.number_input("Batch Limit", min_value=1, max_value=100, value=10)
+limit_choice = st.sidebar.number_input("Batch Limit", min_value=1, max_value=1000, value=10)
 
 # Constants from Config
 INPUT_DIR = GlobalConfig.INPUT_DIR
@@ -60,6 +60,18 @@ if "results" not in st.session_state:
     st.session_state.results = []
 
 # --- Helper Functions ---
+@st.cache_data(ttl=15, show_spinner=False)
+def get_sorted_images(directory):
+    if not os.path.exists(directory):
+        return []
+    valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
+    images = [
+        f for f in os.listdir(directory) 
+        if f.lower().endswith(valid_exts) and "approvals.json" not in f
+    ]
+    images.sort(key=lambda x: os.path.getmtime(os.path.join(directory, x)), reverse=True)
+    return images
+
 async def fetch_remote_metadata(execution_id):
     return await client.get_execution_details(execution_id)
 
@@ -194,29 +206,27 @@ with tab2:
                 execution_map[fname] = exc
         
         # 2. List files and build data list
-        all_files = os.listdir(OUTPUT_DIR)
-        valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
+        all_files = get_sorted_images(OUTPUT_DIR)
         
         gallery_items = []
         for f in all_files:
-            if f.lower().endswith(valid_exts) and "approvals.json" not in f:
-                full_path = os.path.join(OUTPUT_DIR, f)
-                mtime = os.path.getmtime(full_path)
-                dt = datetime.fromtimestamp(mtime)
-                date_str = dt.strftime("%Y-%m-%d")
-                
-                # Get Metadata
-                record = execution_map.get(f)
-                persona = record['persona'] if record and 'persona' in record and record['persona'] else "Unknown"
-                
-                gallery_items.append({
-                    "filename": f,
-                    "path": full_path,
-                    "mtime": mtime,
-                    "date": date_str,
-                    "persona": persona,
-                    "record": record
-                })
+            full_path = os.path.join(OUTPUT_DIR, f)
+            mtime = os.path.getmtime(full_path)
+            dt = datetime.fromtimestamp(mtime)
+            date_str = dt.strftime("%Y-%m-%d")
+            
+            # Get Metadata
+            record = execution_map.get(f)
+            persona = record['persona'] if record and 'persona' in record and record['persona'] else "Unknown"
+            
+            gallery_items.append({
+                "filename": f,
+                "path": full_path,
+                "mtime": mtime,
+                "date": date_str,
+                "persona": persona,
+                "record": record
+            })
         
         if not gallery_items:
              st.info("No results found yet.")
@@ -315,7 +325,7 @@ with tab2:
                     cols = st.columns(cols_per_row)
                     for idx, item in enumerate(row_items):
                         with cols[idx]:
-                            st.image(item['path'], caption=item['filename'], use_container_width=True)
+                            st.image(item['path'], caption=item['filename'], width='stretch')
                             base_name = os.path.splitext(item['filename'])[0]
                             st.checkbox("Approve", key=f"approve_{base_name}", on_change=save_approvals)
                             
@@ -368,72 +378,101 @@ with tab3:
     if "selected_video_source" not in st.session_state:
         st.session_state.selected_video_source = None
     
-    # List output images
-    valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
-    archive_images = []
-    if os.path.exists(OUTPUT_DIR):
-        archive_images = [
-            f for f in os.listdir(OUTPUT_DIR) 
-            if f.lower().endswith(valid_exts)
-        ]
-        archive_images.sort(key=lambda x: os.path.getmtime(os.path.join(OUTPUT_DIR, x)), reverse=True)
-    
-    # Display Grid for Selection
-    if not archive_images:
-        st.warning("No images in Results Gallery.")
-    else:
-        # --- Pagination Logic ---
-        ITEMS_PER_PAGE = 10
-        if "video_page_number" not in st.session_state:
-            st.session_state.video_page_number = 0
+    def on_method_change():
+        st.session_state.selected_video_source = None
 
-        total_pages = (len(archive_images) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
-        
-        # Ensure page number is valid
-        if st.session_state.video_page_number >= total_pages:
-            st.session_state.video_page_number = max(0, total_pages - 1)
+    # Input Method Toggle
+    input_method = st.radio(
+        "Choose Input Method", 
+        ["Select from Results Gallery", "Upload Custom Image"], 
+        horizontal=True,
+        on_change=on_method_change,
+        key="video_input_method"
+    )
+
+    if input_method == "Upload Custom Image":
+        uploaded_video_file = st.file_uploader("Upload Image", type=['png', 'jpg', 'jpeg', 'webp'])
+        if uploaded_video_file:
+            # Create temp directory
+            temp_dir = os.path.join(INPUT_DIR, "temp_uploads")
+            os.makedirs(temp_dir, exist_ok=True)
             
-        start_idx = st.session_state.video_page_number * ITEMS_PER_PAGE
-        end_idx = start_idx + ITEMS_PER_PAGE
-        
-        current_batch = archive_images[start_idx:end_idx]
-        
-        st.write(f"Found {len(archive_images)} available images. Showing page {st.session_state.video_page_number + 1} of {total_pages}.")
-        
-        # Show currently selected
-        if st.session_state.selected_video_source:
-            st.info(f"Selected: {os.path.basename(st.session_state.selected_video_source)}")
-            st.image(st.session_state.selected_video_source, width=300)
-            if st.button("Clear Selection"):
-                st.session_state.selected_video_source = None
-                st.rerun()
+            # Save file
+            file_path = os.path.join(temp_dir, uploaded_video_file.name)
+            with open(file_path, "wb") as f:
+                f.write(uploaded_video_file.getbuffer())
+            
+            st.success(f"Uploaded: {uploaded_video_file.name}")
+            st.image(file_path, width=300)
+            
+            # Auto-select
+            st.session_state.selected_video_source = file_path
         else:
-            st.info("Please select an image below:")
+            if st.session_state.selected_video_source:
+                 st.info(f"Currently selected: {os.path.basename(st.session_state.selected_video_source)}")
+            else:
+                 st.info("Please upload an image.")
 
-        # Grid for current page
-        cols_per_row = 4
-        for i in range(0, len(current_batch), cols_per_row):
-            cols = st.columns(cols_per_row)
-            row_items = current_batch[i:i+cols_per_row]
-            for idx, filename in enumerate(row_items):
-                with cols[idx]:
-                    img_path = os.path.join(OUTPUT_DIR, filename)
-                    st.image(img_path, width='stretch')
-                    if st.button("Select", key=f"sel_vid_{filename}"):
-                        st.session_state.selected_video_source = img_path
-                        st.rerun()
+    else:
+        # List output images
+        archive_images = get_sorted_images(OUTPUT_DIR)
         
-        # Pagination Buttons
-        if total_pages > 1:
-            col_prev, col_page, col_next = st.columns([1, 2, 1])
-            with col_prev:
-                if st.button("Previous", disabled=st.session_state.video_page_number == 0):
-                    st.session_state.video_page_number -= 1
+        # Display Grid for Selection
+        if not archive_images:
+            st.warning("No images in Results Gallery.")
+        else:
+            # --- Pagination Logic ---
+            ITEMS_PER_PAGE = 10
+            if "video_page_number" not in st.session_state:
+                st.session_state.video_page_number = 0
+
+            total_pages = (len(archive_images) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+            
+            # Ensure page number is valid
+            if st.session_state.video_page_number >= total_pages:
+                st.session_state.video_page_number = max(0, total_pages - 1)
+                
+            start_idx = st.session_state.video_page_number * ITEMS_PER_PAGE
+            end_idx = start_idx + ITEMS_PER_PAGE
+            
+            current_batch = archive_images[start_idx:end_idx]
+            
+            st.write(f"Found {len(archive_images)} available images. Showing page {st.session_state.video_page_number + 1} of {total_pages}.")
+            
+            # Show currently selected
+            if st.session_state.selected_video_source:
+                st.info(f"Selected: {os.path.basename(st.session_state.selected_video_source)}")
+                st.image(st.session_state.selected_video_source, width=300)
+                if st.button("Clear Selection"):
+                    st.session_state.selected_video_source = None
                     st.rerun()
-            with col_next:
-                if st.button("Next", disabled=st.session_state.video_page_number >= total_pages - 1):
-                    st.session_state.video_page_number += 1
-                    st.rerun()
+            else:
+                st.info("Please select an image below:")
+
+            # Grid for current page
+            cols_per_row = 4
+            for i in range(0, len(current_batch), cols_per_row):
+                cols = st.columns(cols_per_row)
+                row_items = current_batch[i:i+cols_per_row]
+                for idx, filename in enumerate(row_items):
+                    with cols[idx]:
+                        img_path = os.path.join(OUTPUT_DIR, filename)
+                        st.image(img_path, width='stretch')
+                        if st.button("Select", key=f"sel_vid_{filename}"):
+                            st.session_state.selected_video_source = img_path
+                            st.rerun()
+            
+            # Pagination Buttons
+            if total_pages > 1:
+                col_prev, col_page, col_next = st.columns([1, 2, 1])
+                with col_prev:
+                    if st.button("Previous", disabled=st.session_state.video_page_number == 0):
+                        st.session_state.video_page_number -= 1
+                        st.rerun()
+                with col_next:
+                    if st.button("Next", disabled=st.session_state.video_page_number >= total_pages - 1):
+                        st.session_state.video_page_number += 1
+                        st.rerun()
 
     st.divider()
 
@@ -444,102 +483,53 @@ with tab3:
         workflow = VideoStoryboardWorkflow(verbose=True)
         
         # 1. Run CrewAI Workflow
-        st.write("🧠 Agents are brainstorming script and keyframes...")
+        st.write("🧠 Agents are brainstorming video concepts...")
         result = workflow.process(source_path, persona)
         
-        script = result["full_script"]
-        frames = result["frames"]
+        concepts = result["concepts_text"]
+        variations = result["variations"]
         
-        st.success("✅ Script and Prompts generated!")
+        st.success("✅ Video Prompts Generated!")
         
-        # 2. Generate Images via ComfyUI
-        client = ComfyUIClient()
-        generated_frames = []
-        
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        total_frames = len(frames)
-        for i, frame_data in enumerate(frames):
-            frame_num = frame_data.get("frame")
-            prompt = frame_data.get("prompt")
-            segment = frame_data.get("script_segment")
-            
-            status_text.text(f"🎨 Generating Frame {frame_num}/6...")
-            
-            # Call ComfyUI
-            # We use the 'turbo' workflow by default or user choice
-            try:
-                # Use Nano Banana workflow for video drafting as requested
-                gen_result = await client.generate_and_wait(
-                    positive_prompt=prompt,
-                    negative_prompt="bad quality, blur, low resolution", # Simple negative
-                    kol_persona=persona,
-                    workflow_name="nano_banana", # Force Nano Banana for consistency
-                    upload_to_gcs=False, # Keep local for draft
-                    input_image_path=source_path # Pass the source image
-                )
-                
-                # Check for image bytes
-                if "image_bytes" in gen_result:
-                    image_bytes = gen_result["image_bytes"]
-                    generated_frames.append({
-                        "frame": frame_num,
-                        "image_bytes": image_bytes,
-                        "script": segment,
-                        "prompt": prompt
-                    })
-                else:
-                     st.error(f"Failed to generate Frame {frame_num}")
-            
-            except Exception as e:
-                 st.error(f"Error generating Frame {frame_num}: {e}")
-            
-            progress_bar.progress((i + 1) / total_frames)
-            
         return {
             "source": source_path,
-            "script": script,
-            "generated_frames": generated_frames
+            "concepts_text": concepts,
+            "variations": variations
         }
 
-    if st.button("Draft Generate Video", disabled=(st.session_state.selected_video_source is None)):
+    if st.button("Draft Generate Video Prompts", disabled=(st.session_state.selected_video_source is None)):
         if st.session_state.selected_video_source:
-            with st.spinner("Running Video Storyboard Workflow... This may take a few minutes."):
+            with st.spinner("Brainstorming Video Prompts... This may take a moment."):
                 video_results = asyncio.run(run_video_draft(st.session_state.selected_video_source, kol_persona))
                 st.session_state.video_results = video_results
-                st.success("Video Draft Completed!")
+                st.success("Prompts Ready!")
         else:
             st.error("Please select an image first.")
 
     # --- 3. Review ---
     if "video_results" in st.session_state and st.session_state.video_results:
-        st.subheader("3. Review Storyboard")
+        st.subheader("3. Video Prompts")
         
         res = st.session_state.video_results
         
-        # Display Script
-        with st.expander("📜 Full Video Script", expanded=False):
-            st.markdown(res["script"])
+        col1, col2 = st.columns([1, 2])
+        with col1:
+             st.image(res["source"], caption="Source Image", width='stretch')
+        
+        with col2:
+             with st.expander("📜 Concept Details", expanded=False):
+                 st.markdown(res["concepts_text"])
+
+        st.divider()
+        
+        # Display Variations
+        st.markdown("### 🎞️ Generated Prompts")
+        variations = res["variations"]
+        for item in variations:
+            var_num = item.get("variation")
+            concept = item.get("concept_name")
+            prompt = item.get("prompt")
             
-        # Display Storyboard
-        st.markdown("### 🎞️ Visual Storyboard")
-        
-        # Frame 0 (Source)
-        col0, col_rest = st.columns([1, 4])
-        with col0:
-            st.image(res["source"], caption="Frame 0 (Start)", width='stretch')
-            st.caption("Start")
-        
-        # Generated Frames
-        # Display in rows of 3
-        gen_frames = res["generated_frames"]
-        if gen_frames:
-            cols = st.columns(3)
-            for idx, frame in enumerate(gen_frames):
-                col = cols[idx % 3]
-                with col:
-                    st.image(frame["image_bytes"], caption=f"Frame {frame['frame']}", width='stretch')
-                    st.caption(f"**Segment {frame['frame']}**: {frame['script'][:100]}...")
-                    with st.popover("Prompt"):
-                        st.write(frame["prompt"])
+            st.markdown(f"#### Variation {var_num}: {concept}")
+            st.code(prompt, language="text")
+            st.divider()

@@ -61,113 +61,76 @@ Here is the systematic translation of your prompt framework and feedback summary
 
 ---
 
-Below is a systematic summary, drawn accurately from our entire conversation without further inference.
+## I. THE 11-POINT PROMPT FRAMEWORK
+You must structure your analysis and final prompt generation following this exact logical flow:
 
-## I. Characteristics/Elements for Prompts (Your Implicit Framework)
-
-### 1. Workflow & Model Foundation
-
-* **Main Model:** Z-image Turbo
-* **Persona LoRA:** Enabled
-* **DO NOT describe:** Face, skin tone, or personal identity.
-* **Prompt focuses only on:** Pose, Outfit, Camera Angle, Lighting, Color Tone, Environment, and Expression.
-
-### 2. Prompt Structure Requirements
-
-* **Length:** 80–250 words.
-* **Style:**
-* Long & precise ✅
-* Long & vague ❌
-
-* **Content:** Use 3–5 key visual concepts.
-* **No separate negative prompts:** Convert all negatives into **positive logic**.
-* ❌ Instead of “no blur”
-* ✅ Use “sharp focus”
-
-* **Forbidden phrases:** “close like the reference” or “similar to the reference” (The model has no memory of the reference image).
-
-### 3. Core Analysis Groups
-
-**A. Pose & Body Logic (Crucial)**
-
-* The pose is the “soul of the image.”
-* **Must maintain:** Body axis, S-curve, hand placement, and weight distribution.
-* **Emphasize:** Small waist, deep waist curve, rounded hips, straight/slender legs.
-* **Proportions:** Must be natural (avoid exaggerated AI proportions).
-
-**B. Camera & Framing**
-
-* **Angles:** Front, side, ¾, or near-back (not absolute back).
-* **Camera Height:** Eye-level or slightly low angle.
-* **Distance:** Medium shot, upper-body, or waist-up.
-* ❌ **Avoid:** Vague or generic camera descriptions.
-
-**C. Outfit (High Detail & Strict)**
-
-* **Accuracy:** Specific garment types (e.g., jeans ≠ pants ≠ leather pants).
-* **Fit:** No "fitted" unless requested; avoid unintended tight chest rendering.
-* **Material:** Focus on modern, fresh denim; no distressed or vintage looks unless specified.
-* ❌ **Avoid:** Unintended bras appearing or clothing rendered too thin/clinging.
-
-**D. Hair**
-
-* **Description:** Clear style (straight, wavy, tied, or loose) and state (neat or natural).
-* **Color:** **{hair_color}** is mandatory; no tone deviations allowed.
-
-**E. Facial Expression**
-
-* **Vibe:** Calm, confident, aloof, relaxed, or soft.
-* ❌ **Avoid:** Generic smiles, sexy exaggeration, or expressions that don't match the pose.
-
-**F. Lighting & Color Tone (High Sensitivity)**
-
-* **Avoid:** Strong Depth of Field (DOF), cinematic lighting, or looks that are too “clean” and “perfect.”
-* **Prioritize:** Everyday lighting, slightly uneven, textured, with minor imperfections.
-* **Goal:** Daily realistic photography; reduce the need for post-processing or filter apps.
+[1] Technical anchor (LoRA / identity)
+[2] Subject + age + context
+[3] Camera framing & angle
+[4] Body orientation & posture
+[5] Primary gesture / action
+[6] Expression & emotional state
+[7] Outfit & fabric realism
+[8] Hair & grooming realism
+[9] Props / foreground objects
+[10] Background & environment realism (anti-DOF)
+[11] Lighting, color, capture feel
 
 ---
 
-## II. Errors Made & Correction Requirements
+## II. DETAILED CONSTRAINTS & REQUIREMENTS
 
-### 1. Reference Logic Errors
+### 1. Subject & Identity (Strict)
+- **Age**: You MUST describe the subject as **"a girl 22-23 years old"** (FIXED).
+- **Identity**: DO NOT describe face features, skin tone, or specific personal identity.
+- **Body**: Maintain body axis, S-curve, and hand placement. Emphasize small waist, deep waist curve, rounded hips, and straight/slender legs. Natural proportions only.
 
-* ❌ **Mistake:** Using phrases like “close like the reference.”
-* ❌ **Mistake:** Editing a prompt based on an old reference after a new one has been provided.
-* ✅ **Requirement:** Complete reset; write the prompt based **only** on the current reference image.
+### 2. Hair & Styling
+- **Color**: **{hair_color}** (MANDATORY).
+- **Hairstyle**: Select ONE from this list:
+{hairstyle_options}
+- **Description**: Describe flow, texture, and state (neat vs natural) in detail.
 
-### 2. Camera & Angle Errors
+### 3. Outfit & Fabric
+- **Specificity**: Use exact garment types (e.g., "jeans" not "pants").
+- **Realism**: Describe fabric texture (e.g., "soft cotton," "knit," "modern denim").
+- **Fit**: Avoid unintended tightness or "fitted" descriptors unless evident.
 
-* ❌ **Mistake:** Vague descriptions regarding near-back angles, which side of the face is showing, or camera height.
-* ✅ **Requirement:** Record the viewing angle precisely (but not as an absolute 180° back) and ensure it is logical for the pose.
+### 4. Background & Environment
+- **Constraint**: You MUST include the phrase: **"the background is rendered with ultra realistic detail"**.
+- **Realism**: Avoid Depth of Field (DOF). The background should be "lived-in," showing texture, wear, and imperfections (e.g., "scuffs," "irregularities").
 
-### 3. Outfit Errors
-
-* ❌ **Mistake:** Failing to specify "jeans," allowing unintended distressing, or incorrect fitting (e.g., unintended black bras).
-* ✅ **Requirement:** Explicitly describe material, form, and the degree of tightness.
-
-### 4. Hair Errors
-
-* ❌ **Mistake:** Simply saying “blonde” without style or flow details.
-* ✅ **Requirement:** Detailed hair descriptions (style + how it falls).
-
-### 5. Expression Errors
-
-* ❌ **Mistake:** Generic expressions or those that don't match the context/pose.
-* ✅ **Requirement:** Focus on "Calm" and "Confident"; avoid sexualization or default smiles.
-
-### 6. Critical Error: "AI-looking" Results
-
-* ❌ **Mistake:** Using "DOF" or "clean and natural color tone."
-* ❌ **Result:** Images that are too perfect/AI-rendered.
-* ✅ **Requirement:** Remove DOF, retain imperfections, maintain texture, and emphasize a **“lived-in look.”**
+### 5. Lighting & Atmosphere
+- **Vibe**: Daily realistic photography.
+- **Quality**: Soft, uneven, textured lighting. Avoid "cinematic" or "studio" perfection.
 
 ---
 
-**Example Output (Follow this format, NOT keywords):**
-A realistic outdoor photograph of a young beautiful girl around 22–23 years old leaning against the edge of a swimming pool during daytime. The camera is positioned slightly below eye level, facing her from the front, creating a gentle low-angle perspective that emphasizes the upper body and torso. She supports herself with both hands placed behind her on the pool edge, allowing her shoulders to open and her body to lean back subtly, naturally highlighting a slim waist with a deep inward curve, a flat abdomen, and rounded hips.
-Her hair is {hair_color}, worn long and loose with a lightly damp texture, falling naturally over her shoulders and chest. The strands appear soft and relaxed, with a slight natural part and no heavy styling or added volume.
-She is wearing a two-piece bikini in a dark, subtly iridescent tone, with thin straps and side ties at the hips. The fabric catches sunlight gently, showing a soft sheen without looking glossy or artificial. Her expression is relaxed and candid, with her mouth slightly open and lips loose, conveying a playful yet calm summer moment rather than a posed look.
-The setting features clear turquoise pool water and a neutral architectural background. Natural sunlight illuminates the scene evenly, creating soft highlights on skin and water with clean shadows. The color tone stays bright and fresh, with warm skin highlights, vivid pool blues, and balanced contrast. Sharp focus, realistic texture, natural depth of field, no cinematic grading, no heavy filters.
+## III. OUTPUT FORMAT
+- **Structure**: A single, comprehensive paragraph following the 11-point framework.
+- **Length**: As detailed as possible. No limit.
+- **Style**: Descriptive, narrative, and "thick" with visual adjectives.
+
+---
+
+## IV. EXAMPLE OUTPUT
+(Follow this level of detail and structure)
+
+a young beautiful girl around 22–23 years old, sitting at a café table and captured in a medium shot from head to upper torso at eye-level. The camera is straight and stable, with no tilt or dramatic angle. Her body faces the camera almost directly, shoulders relaxed and posture upright, weight evenly balanced while seated.
+
+She raises one hand holding a metal spoon, gently covering one eye in a playful and casual gesture. Her elbow is bent naturally, wrist relaxed. Her other arm rests comfortably out of frame. The pose feels spontaneous and unforced, expressing a light, cozy café moment rather than a posed shot. Her upper body appears slim and well-proportioned, with soft shoulders, visible collarbones, a narrow waistline, and a naturally full but relaxed chest without tension.
+
+She wears a thin beige spaghetti-strap top made from soft cotton or knit fabric. Over it, she loosely drapes a light oatmeal-colored knitted cardigan, slipping off both shoulders slightly. The cardigan texture is clearly visible, not smooth or perfect, enhancing a warm and casual feel.
+
+Her hair is styled in a loose messy updo with gentle volume at the crown. Several soft strands fall naturally around the face and neck. Hair color is blonde or honey-blonde, realistic and natural, without artificial shine or heavy styling.
+
+Her expression is calm and content. Eyes are gently closed, lips forming a subtle, relaxed smile, conveying enjoyment and ease. She is not actively posing for the camera, but immersed in the moment.
+
+In front of her on the table is a wooden tray holding a casual meal: a bowl of white rice, a fried egg, a small dish of meat and vegetables, and another small side dish. Two drinks sit nearby — one red-toned fruit drink and one green-toned beverage — placed naturally without careful styling.
+
+The background is rendered with ultra realistic detail, showing a modern café interior that feels genuinely lived-in rather than styled. Light grey concrete walls display subtle surface irregularities and natural texture variation. Exposed ceiling elements and visible pipes show slight wear and tonal inconsistency instead of uniform finishes. Round hanging lights emit soft, uneven illumination typical of real indoor fixtures. Indoor plants in simple pots show natural variation in leaf shape and color, and the wooden furniture reveals fine grain patterns, minor scuffs, and everyday signs of use. The space feels authentic and naturally imperfect, with realistic spatial depth and environmental presence, avoiding any studio-like cleanliness or artificial refinement.
+
+Lighting is soft and natural, coming primarily from a large window to the side, blended with gentle indoor ambient lighting. White balance is neutral with a slight warm tone. Colors are muted and harmonious, with beige, cream, grey, and soft green dominating. The image feels like a slightly imperfect, everyday snapshot taken with a high-end smartphone, realistic, cozy, and authentic, without cinematic effects or depth-of-field blur.
 """
 
     def __init__(self, verbose: bool = True):
@@ -268,11 +231,17 @@ The setting features clear turquoise pool water and a neutral architectural back
             # Determine hair color for Turbo
             hair_color = self.PERSONA_HAIR_COLORS.get(persona_key, "Honey-blonde")
             
-            prompt_instruction = self.TURBO_PROMPT_TEMPLATE.format(hair_color=hair_color)
+            # Determine hairstyle options
+            header = "  - You MUST choose ONE from this list explicitly (Do not invent others):"
+            
+            hairstyle_list = "\n".join([f"  - {style}" for style in available_hairstyles])
+            hairstyle_options = f"{header}\n{hairstyle_list}"
+
+            prompt_instruction = self.TURBO_PROMPT_TEMPLATE.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
             
             generate_prompt_task = Task(
                 description=prompt_instruction,
-                expected_output="A detailed paragraph describing the image, approximately 80-250 words.",
+                expected_output="A detailed paragraph describing the image as detailed as possible",
                 agent=self.engineer,
                 context=[analyze_task]
             )

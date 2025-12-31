@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  workspace:
+    build: .
+    command: streamlit run apps/workspace_app.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./Sorted:/app/Sorted
+      - ./processed:/app/processed
+      - ./results:/app/results
+      - ./image_logs.db:/app/image_logs.db
+      - ./.env:/app/.env
+    env_file:
+      - .env
+
+  gallery:
+    build: .
+    command: streamlit run apps/gallery_app.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8502:8501"
+    volumes:
+      - ./Sorted:/app/Sorted
+      - ./processed:/app/processed
+      - ./results:/app/results
+      - ./image_logs.db:/app/image_logs.db
+      - ./.env:/app/.env
+    env_file:
+      - .env
+
+  video:
+    build: .
+    command: streamlit run apps/video_app.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8503:8501"
+    volumes:
+      - ./Sorted:/app/Sorted
+      - ./processed:/app/processed
+      - ./results:/app/results
+      - ./image_logs.db:/app/image_logs.db
+      - ./.env:/app/.env
+    env_file:
+      - .env
