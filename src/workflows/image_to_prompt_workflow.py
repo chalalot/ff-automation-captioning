@@ -61,6 +61,7 @@ class ImageToPromptWorkflow:
         # Initialize agents
         self.analyst = self._create_analyst()
         self.engineer = self._create_engineer()
+        self.turbo_engineer = self._create_turbo_engineer()
 
     def _create_analyst(self) -> Agent:
         return Agent(
@@ -99,6 +100,29 @@ class ImageToPromptWorkflow:
                - Use comma-separated keywords ONLY.
                - No full sentences.
                - No bullet points.
+            """,
+            verbose=self.verbose,
+            allow_delegation=False,
+            memory=False,
+            llm="gpt-4o"
+        )
+
+    def _create_turbo_engineer(self) -> Agent:
+        return Agent(
+            role='Visual Narrative Prompt Expert',
+            goal='Convert visual analysis into rich, descriptive narrative prompts.',
+            backstory="""You are an expert visual storyteller and prompt engineer.
+            
+            **YOUR GOAL:**
+            Translate visual analysis into rich, descriptive narrative prompts that follow a strict structure.
+            
+            **YOUR STYLE GUIDE:**
+            1. **Descriptive Flow**: Write in fluid, natural sentences. Avoid broken keyword lists.
+            2. **High Density**: Pack as much visual detail as possible into the narrative (textures, lighting, atmosphere).
+            3. **Objective Realism**: Focus on physical reality (fabric weight, light direction), avoiding abstract metaphors.
+            4. **Formatting**:
+               - Use a single, cohesive paragraph.
+               - Follow the structure requested in the task exactly.
             """,
             verbose=self.verbose,
             allow_delegation=False,
@@ -173,7 +197,7 @@ class ImageToPromptWorkflow:
             generate_prompt_task = Task(
                 description=prompt_instruction,
                 expected_output="A detailed paragraph describing the image as detailed as possible",
-                agent=self.engineer,
+                agent=self.turbo_engineer,
                 context=[analyze_task]
             )
         else:
