@@ -199,8 +199,25 @@ if os.path.exists(OUTPUT_DIR):
                                 st.write(f"**Status:** {db_record['status']}")
                                 
                                 ref_path = db_record.get('image_ref_path')
-                                if ref_path and os.path.exists(ref_path):
-                                    st.image(ref_path, caption="Reference Image", width=200)
+                                if ref_path:
+                                    final_ref_path = None
+                                    if os.path.exists(ref_path):
+                                        final_ref_path = ref_path
+                                    else:
+                                        # Fix Windows paths when running in Linux container
+                                        fixed_path = ref_path.replace('\\', '/')
+                                        if os.path.exists(fixed_path):
+                                            final_ref_path = fixed_path
+                                        else:
+                                            # Fallback: Check if file exists in PROCESSED_DIR by filename
+                                            # This handles case where absolute path differs but file is in mounted processed dir
+                                            filename = os.path.basename(fixed_path)
+                                            fallback = os.path.join(GlobalConfig.PROCESSED_DIR, filename)
+                                            if os.path.exists(fallback):
+                                                final_ref_path = fallback
+                                    
+                                    if final_ref_path:
+                                        st.image(final_ref_path, caption="Reference Image", width=200)
                                 
                                 if st.button("Fetch Remote Details", key=f"fetch_{base_name}"):
                                     with st.spinner("Fetching details..."):
