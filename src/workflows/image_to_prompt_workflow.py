@@ -56,83 +56,6 @@ class ImageToPromptWorkflow:
         "Roxie": "Pastel pink"
     }
 
-    TURBO_PROMPT_TEMPLATE = """
-Here is the systematic translation of your prompt framework and feedback summary.
-
----
-
-## I. THE 11-POINT PROMPT FRAMEWORK
-You must structure your analysis and final prompt generation following this exact logical flow:
-
-[1] Technical anchor (LoRA / identity)
-[2] Subject + age + context
-[3] Camera framing & angle
-[4] Body orientation & posture
-[5] Primary gesture / action
-[6] Expression & emotional state
-[7] Outfit & fabric realism
-[8] Hair & grooming realism
-[9] Props / foreground objects
-[10] Background & environment realism (anti-DOF)
-[11] Lighting, color, capture feel
-
----
-
-## II. DETAILED CONSTRAINTS & REQUIREMENTS
-
-### 1. Subject & Identity (Strict)
-- **Age**: You MUST describe the subject as **"a girl 22-23 years old"** (FIXED).
-- **Identity**: DO NOT describe face features, skin tone, or specific personal identity.
-- **Body**: Maintain body axis, S-curve, and hand placement. Emphasize small waist, deep waist curve, rounded hips, and straight/slender legs. Natural proportions only.
-
-### 2. Hair & Styling
-- **Color**: **{hair_color}** (MANDATORY).
-- **Hairstyle**: Select ONE from this list:
-{hairstyle_options}
-- **Description**: Describe flow, texture, and state (neat vs natural) in detail.
-
-### 3. Outfit & Fabric
-- **Specificity**: Use exact garment types (e.g., "jeans" not "pants").
-- **Realism**: Describe fabric texture (e.g., "soft cotton," "knit," "modern denim").
-- **Fit**: Avoid unintended tightness or "fitted" descriptors unless evident.
-
-### 4. Background & Environment
-- **Constraint**: You MUST include the phrase: **"the background is rendered with ultra realistic detail"**.
-- **Realism**: Avoid Depth of Field (DOF). The background should be "lived-in," showing texture, wear, and imperfections (e.g., "scuffs," "irregularities").
-
-### 5. Lighting & Atmosphere
-- **Vibe**: Daily realistic photography.
-- **Quality**: Soft, uneven, textured lighting. Avoid "cinematic" or "studio" perfection.
-
----
-
-## III. OUTPUT FORMAT
-- **Structure**: A single, comprehensive paragraph following the 11-point framework.
-- **Length**: As detailed as possible. No limit.
-- **Style**: Descriptive, narrative, and "thick" with visual adjectives.
-
----
-
-## IV. EXAMPLE OUTPUT
-(Follow this level of detail and structure)
-
-a young beautiful girl around 22–23 years old, sitting at a café table and captured in a medium shot from head to upper torso at eye-level. The camera is straight and stable, with no tilt or dramatic angle. Her body faces the camera almost directly, shoulders relaxed and posture upright, weight evenly balanced while seated.
-
-She raises one hand holding a metal spoon, gently covering one eye in a playful and casual gesture. Her elbow is bent naturally, wrist relaxed. Her other arm rests comfortably out of frame. The pose feels spontaneous and unforced, expressing a light, cozy café moment rather than a posed shot. Her upper body appears slim and well-proportioned, with soft shoulders, visible collarbones, a narrow waistline, and a naturally full but relaxed chest without tension.
-
-She wears a thin beige spaghetti-strap top made from soft cotton or knit fabric. Over it, she loosely drapes a light oatmeal-colored knitted cardigan, slipping off both shoulders slightly. The cardigan texture is clearly visible, not smooth or perfect, enhancing a warm and casual feel.
-
-Her hair is styled in a loose messy updo with gentle volume at the crown. Several soft strands fall naturally around the face and neck. Hair color is blonde or honey-blonde, realistic and natural, without artificial shine or heavy styling.
-
-Her expression is calm and content. Eyes are gently closed, lips forming a subtle, relaxed smile, conveying enjoyment and ease. She is not actively posing for the camera, but immersed in the moment.
-
-In front of her on the table is a wooden tray holding a casual meal: a bowl of white rice, a fried egg, a small dish of meat and vegetables, and another small side dish. Two drinks sit nearby — one red-toned fruit drink and one green-toned beverage — placed naturally without careful styling.
-
-The background is rendered with ultra realistic detail, showing a modern café interior that feels genuinely lived-in rather than styled. Light grey concrete walls display subtle surface irregularities and natural texture variation. Exposed ceiling elements and visible pipes show slight wear and tonal inconsistency instead of uniform finishes. Round hanging lights emit soft, uneven illumination typical of real indoor fixtures. Indoor plants in simple pots show natural variation in leaf shape and color, and the wooden furniture reveals fine grain patterns, minor scuffs, and everyday signs of use. The space feels authentic and naturally imperfect, with realistic spatial depth and environmental presence, avoiding any studio-like cleanliness or artificial refinement.
-
-Lighting is soft and natural, coming primarily from a large window to the side, blended with gentle indoor ambient lighting. White balance is neutral with a slight warm tone. Colors are muted and harmonious, with beige, cream, grey, and soft green dominating. The image feels like a slightly imperfect, everyday snapshot taken with a high-end smartphone, realistic, cozy, and authentic, without cinematic effects or depth-of-field blur.
-"""
-
     def __init__(self, verbose: bool = True):
         self.verbose = verbose
         # Initialize agents
@@ -237,7 +160,15 @@ Lighting is soft and natural, coming primarily from a large window to the side, 
             hairstyle_list = "\n".join([f"  - {style}" for style in available_hairstyles])
             hairstyle_options = f"{header}\n{hairstyle_list}"
 
-            prompt_instruction = self.TURBO_PROMPT_TEMPLATE.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
+            # Load template from file
+            template_path = os.path.join(os.path.dirname(__file__), 'turbo_prompt_template.txt')
+            try:
+                with open(template_path, 'r', encoding='utf-8') as f:
+                    turbo_template = f.read()
+            except Exception as e:
+                raise FileNotFoundError(f"Could not load Turbo template from {template_path}: {e}")
+
+            prompt_instruction = turbo_template.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
             
             generate_prompt_task = Task(
                 description=prompt_instruction,

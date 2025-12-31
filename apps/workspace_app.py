@@ -9,6 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.config import GlobalConfig
 from src.database.image_logs_storage import ImageLogsStorage
+from src.workflows.image_to_prompt_workflow import ImageToPromptWorkflow
 
 # Import Scripts for Buttons
 try:
@@ -44,6 +45,107 @@ os.makedirs(PROCESSED_DIR, exist_ok=True)
 
 # Initialize Components
 storage = ImageLogsStorage()
+
+# --- Turbo Agent Studio ---
+with st.expander("⚙️ Turbo Agent Studio", expanded=False):
+    st.info("Edit the instructions for the Turbo Agent and test immediately without queuing.")
+    
+    col_edit, col_test = st.columns(2)
+    
+    # Paths
+    base_workflow_dir = os.path.join(os.path.dirname(__file__), '..', 'src', 'workflows')
+    path_framework = os.path.join(base_workflow_dir, 'turbo_framework.txt')
+    path_constraints = os.path.join(base_workflow_dir, 'turbo_constraints.txt')
+    path_example = os.path.join(base_workflow_dir, 'turbo_example.txt')
+    path_compiled = os.path.join(base_workflow_dir, 'turbo_prompt_template.txt')
+    
+    # -- Editor --
+    with col_edit:
+        st.subheader("📝 Prompt Editor")
+        
+        def load_content(path):
+            if os.path.exists(path):
+                try:
+                    with open(path, 'r', encoding='utf-8') as f:
+                        return f.read()
+                except:
+                    return ""
+            return ""
+
+        # Tabs for structural editing
+        tab_fw, tab_cs, tab_ex = st.tabs(["Framework", "Constraints", "Example"])
+        
+        with tab_fw:
+            st.caption("The core logical flow and 11-point framework.")
+            content_fw = st.text_area("Framework", value=load_content(path_framework), height=500, key="editor_fw", label_visibility="collapsed")
+        
+        with tab_cs:
+            st.caption("Detailed constraints, requirements, and output format.")
+            content_cs = st.text_area("Constraints", value=load_content(path_constraints), height=500, key="editor_cs", label_visibility="collapsed")
+            
+        with tab_ex:
+            st.caption("The full example output used for few-shot prompting.")
+            content_ex = st.text_area("Example", value=load_content(path_example), height=500, key="editor_ex", label_visibility="collapsed")
+
+        # Save Logic
+        if st.button("Save Configuration"):
+            try:
+                # 1. Save individual parts
+                with open(path_framework, 'w', encoding='utf-8') as f: f.write(content_fw)
+                with open(path_constraints, 'w', encoding='utf-8') as f: f.write(content_cs)
+                with open(path_example, 'w', encoding='utf-8') as f: f.write(content_ex)
+                
+                # 2. Compile into the single template file
+                # Join with newlines to ensure separation between sections
+                compiled_content = content_fw + "\n" + content_cs + "\n" + content_ex
+                
+                with open(path_compiled, 'w', encoding='utf-8') as f:
+                    f.write(compiled_content)
+                    
+                st.success("✅ Saved & Compiled! 'turbo_prompt_template.txt' updated.")
+            except Exception as e:
+                st.error(f"Failed to save: {e}")
+
+    # -- Tester --
+    with col_test:
+        st.subheader("🧪 Live Tester")
+        st.markdown(f"**Persona:** {kol_persona}")
+        st.caption("Using 'Turbo' workflow logic.")
+        
+        test_image = st.file_uploader("Upload a test image", type=['png', 'jpg', 'jpeg', 'webp'], key="test_uploader")
+        
+        if test_image and st.button("Run Test Generation"):
+            with st.spinner("Analyzing and Generating Prompt..."):
+                try:
+                    # Save temp file
+                    temp_dir = os.path.join(os.path.dirname(__file__), '..', 'temp_test')
+                    os.makedirs(temp_dir, exist_ok=True)
+                    temp_path = os.path.join(temp_dir, test_image.name)
+                    
+                    with open(temp_path, "wb") as f:
+                        f.write(test_image.getbuffer())
+                        
+                    # Initialize Workflow
+                    workflow = ImageToPromptWorkflow(verbose=False)
+                    
+                    # Run Process
+                    result = asyncio.run(workflow.process(
+                        image_path=temp_path,
+                        persona_name=kol_persona,
+                        workflow_type="turbo" 
+                    ))
+                    
+                    generated_prompt = result.get('generated_prompt', "No prompt generated.")
+                    
+                    st.success("Generation Complete!")
+                    st.text_area("Generated Prompt", value=generated_prompt, height=400)
+                    
+                    # Clean up temp file
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                        
+                except Exception as e:
+                    st.error(f"Test Run Failed: {e}")
 
 # --- 1. Workflow Mode ---
 st.header("1. Input Configuration")
