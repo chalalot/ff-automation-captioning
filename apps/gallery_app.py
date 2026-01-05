@@ -7,6 +7,7 @@ import zipfile
 import io
 import pandas as pd
 from datetime import datetime
+from PIL import Image
 
 # Path setup
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -31,6 +32,52 @@ if "results" not in st.session_state:
     st.session_state.results = []
 
 st.header(f"Results Gallery ({OUTPUT_DIR})")
+
+# --- Helper Functions ---
+def extract_metadata_from_image(file_path):
+    """
+    Extracts seed and prompt from ComfyUI image metadata.
+    Returns a dict with seed, prompt, and raw_metadata.
+    """
+    metadata = {
+        "seed": None,
+        "prompt": None,
+        "raw_metadata": {}
+    }
+    
+    try:
+        with Image.open(file_path) as img:
+            meta = img.info
+            if 'prompt' in meta:
+                prompt_data = json.loads(meta['prompt'])
+                metadata["raw_metadata"] = prompt_data
+                
+                # Traverse nodes to find seed and prompt
+                for node_id, node_data in prompt_data.items():
+                    inputs = node_data.get('inputs', {})
+                    class_type = node_data.get('class_type', '')
+                    
+                    # Look for Seed
+                    if metadata["seed"] is None:
+                        if 'seed' in inputs:
+                            metadata["seed"] = inputs['seed']
+                        elif 'noise_seed' in inputs:
+                            metadata["seed"] = inputs['noise_seed']
+                    
+                    # Look for Prompt (Text)
+                    # Prioritize CLIPTextEncode or similar
+                    if 'text' in inputs and isinstance(inputs['text'], str):
+                        # Simple heuristic: if it's a CLIPTextEncode node, it's likely the prompt
+                        # If we haven't found one yet, take it. 
+                        # Or if it's explicitly a CLIPTextEncode, overwrite whatever we found (maybe?)
+                        # Let's just take the first CLIPTextEncode we find, or the first text if no CLIPTextEncode found yet.
+                        if 'CLIPTextEncode' in class_type or metadata["prompt"] is None:
+                            metadata["prompt"] = inputs['text']
+                            
+    except Exception as e:
+        print(f"Error extracting metadata from {file_path}: {e}")
+        
+    return metadata
 
 # --- Persistence Logic ---
 APPROVALS_FILE = os.path.join(OUTPUT_DIR, "approvals.json")
@@ -192,6 +239,18 @@ if os.path.exists(OUTPUT_DIR):
                         st.checkbox("Approve", key=f"approve_{base_name}", on_change=save_approvals)
                         
                         with st.popover("View Metadata"):
+                            # Extract Image Metadata (Seed & Prompt)
+                            img_meta = extract_metadata_from_image(item['path'])
+                            
+                            if img_meta['seed'] is not None:
+                                st.write(f"**Seed:** `{img_meta['seed']}`")
+                            
+                            if img_meta['prompt']:
+                                st.caption("**Prompt:**")
+                                st.text(img_meta['prompt'])
+                            
+                            st.divider()
+
                             db_record = item['record']
                             if db_record:
                                 st.write(f"**Persona:** {item['persona']}")
@@ -224,7 +283,11 @@ if os.path.exists(OUTPUT_DIR):
                                         remote = asyncio.run(fetch_remote_metadata(client, db_record['execution_id']))
                                         if remote: st.json(remote)
                             else:
-                                st.warning("No metadata found.")
+                                st.warning("No database record found.")
+                            
+                            if img_meta['raw_metadata']:
+                                with st.expander("View Full Metadata"):
+                                    st.json(img_meta['raw_metadata'])
 
         # --- Grouping Logic ---
         if group_by_date:
