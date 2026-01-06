@@ -64,10 +64,14 @@ class ImageToPromptWorkflow:
         self.turbo_engineer = self._create_turbo_engineer()
 
     def _create_analyst(self) -> Agent:
-        return Agent(
-            role='Lead Visual Analyst',
-            goal='Analyze reference images to extract objective visual details for reproduction.',
-            backstory="""You are an expert visual director with an eye for detail.
+        # Load backstory from file
+        backstory_path = os.path.join(os.path.dirname(__file__), 'analyst_agent.txt')
+        try:
+            with open(backstory_path, 'r', encoding='utf-8') as f:
+                backstory_content = f.read()
+        except Exception as e:
+            # Fallback if file missing
+            backstory_content = """You are an expert visual director with an eye for detail.
             You can analyze an image and breakdown the:
             - Outfit (colors, textures, cuts)
             - Pose and body language
@@ -76,7 +80,14 @@ class ImageToPromptWorkflow:
             - Lighting setup (shadows, source)
             
             You focus on OBJECTIVE reality. You do not fluff or over-dramatize.
-            """,
+            """
+            if self.verbose:
+                print(f"Warning: Could not load analyst_agent.txt, using fallback. Error: {e}")
+
+        return Agent(
+            role='Lead Visual Analyst',
+            goal='Analyze reference images to extract objective visual details for reproduction.',
+            backstory=backstory_content,
             tools=[VisionTool()],
             verbose=self.verbose,
             allow_delegation=False,
@@ -108,10 +119,14 @@ class ImageToPromptWorkflow:
         )
 
     def _create_turbo_engineer(self) -> Agent:
-        return Agent(
-            role='Visual Narrative Prompt Expert',
-            goal='Convert visual analysis into rich, descriptive narrative prompts.',
-            backstory="""You are an expert visual storyteller and prompt engineer.
+        # Load backstory from file
+        backstory_path = os.path.join(os.path.dirname(__file__), 'turbo_agent.txt')
+        try:
+            with open(backstory_path, 'r', encoding='utf-8') as f:
+                backstory_content = f.read()
+        except Exception as e:
+            # Fallback
+            backstory_content = """You are an expert visual storyteller and prompt engineer.
             
             **YOUR GOAL:**
             Translate visual analysis into rich, descriptive narrative prompts that follow a strict structure.
@@ -123,7 +138,14 @@ class ImageToPromptWorkflow:
             4. **Formatting**:
                - Use a single, cohesive paragraph.
                - Follow the structure requested in the task exactly.
-            """,
+            """
+            if self.verbose:
+                print(f"Warning: Could not load turbo_agent.txt, using fallback. Error: {e}")
+
+        return Agent(
+            role='Visual Narrative Prompt Expert',
+            goal='Convert visual analysis into rich, descriptive narrative prompts.',
+            backstory=backstory_content,
             verbose=self.verbose,
             allow_delegation=False,
             memory=False,
@@ -152,8 +174,14 @@ class ImageToPromptWorkflow:
         available_hairstyles = self.PERSONA_HAIRSTYLES[persona_key]
         
         # Task 1: Analyze
-        analyze_task = Task(
-            description=f"""
+        # Load task description from file
+        analyst_task_path = os.path.join(os.path.dirname(__file__), 'analyst_task.txt')
+        try:
+            with open(analyst_task_path, 'r', encoding='utf-8') as f:
+                analyst_task_template = f.read()
+        except Exception as e:
+            # Fallback
+            analyst_task_template = """
             Analyze the reference image at: {image_path}
             
             Using the Vision Tool, describe every detail of the poses, the clothes, and the body of the girl in the image.
@@ -168,7 +196,15 @@ class ImageToPromptWorkflow:
             7. **Lighting**: Direction and mood.
             
             *Keep it objective and detailed.*
-            """,
+            """
+            if self.verbose:
+                print(f"Warning: Could not load analyst_task.txt, using fallback. Error: {e}")
+        
+        # Format the task description with image path
+        analyst_task_desc = analyst_task_template.format(image_path=image_path)
+
+        analyze_task = Task(
+            description=analyst_task_desc,
             expected_output="A detailed textual description of the image's visual elements, covering body, outfit, pose, and background.",
             agent=self.analyst
         )

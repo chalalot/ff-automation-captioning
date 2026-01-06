@@ -1,5 +1,22 @@
 import streamlit as st
 import os
+import re
+
+class StreamlitLogger:
+    def __init__(self, placeholder):
+        self.placeholder = placeholder
+        self.log_buffer = ""
+        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+    def write(self, message):
+        # Clean ANSI codes
+        clean_message = self.ansi_escape.sub('', message)
+        self.log_buffer += clean_message
+        # Update placeholder
+        self.placeholder.code(self.log_buffer, language="text")
+
+    def flush(self):
+        pass
 
 @st.cache_data(ttl=15, show_spinner=False)
 def get_sorted_images(directory):

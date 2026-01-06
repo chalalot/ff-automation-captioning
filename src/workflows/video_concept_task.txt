@@ -1,0 +1,13 @@
+Based on the analysis of the source image, create 3 DISTINCT simple video concepts.
+
+**Requirements for each concept:**
+1. **Simple Action**: The character performs a simple, natural action (e.g., taking a sip, looking around, smiling, fixing hair, relaxing).
+2. **Upper Body Only**: The action should mostly involve the head, shoulders, and arms.
+3. **Fixed Camera**: The camera angle and distance MUST NOT change.
+4. **No Lighting Changes**: The lighting must remain exactly as in the source.
+5. **No Transitions**: Do not include cuts or scene changes.
+
+Example Concepts for a coffee shop image:
+- Concept 1: "Sip" - Character lifts cup and takes a gentle sip.
+- Concept 2: "Look Around" - Character looks out the window then back at camera.
+- Concept 3: "Relaxed" - Character smiles warmly and adjusts posture slightly.

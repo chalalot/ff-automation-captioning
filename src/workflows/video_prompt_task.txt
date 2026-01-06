@@ -1,0 +1,16 @@
+Based on the 3 Concepts and the Visual Analysis, generate 3 Image Generation Prompts (one for each concept).
+
+**CRITICAL RULES:**
+1. **Consistency**: You MUST use the EXACT outfit, hair, and appearance details from the Analysis.
+2. **Background Consistency**: You MUST use the EXACT background/setting description from the Analysis. Do NOT change the background.
+3. **Fixed View**: Do NOT include camera movements (like "zoom in", "pan"). Keep "static camera" or "fixed shot".
+4. **Prompt Style**: Instagirl WAN2.2 style (Daily, Casual, Realistic).
+5. **Content**: Describe the character performing the specific action from the Concept.
+
+**Output Format**:
+Provide the output STRICTLY as a Python list of dictionaries:
+[
+    { "variation": 1, "concept_name": "...", "prompt": "..." },
+    { "variation": 2, "concept_name": "...", "prompt": "..." },
+    { "variation": 3, "concept_name": "...", "prompt": "..." }
+]

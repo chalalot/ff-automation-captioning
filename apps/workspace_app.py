@@ -3,6 +3,8 @@ import os
 import sys
 import asyncio
 import pandas as pd
+import re
+import contextlib
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -10,6 +12,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.config import GlobalConfig
 from src.database.image_logs_storage import ImageLogsStorage
 from src.workflows.image_to_prompt_workflow import ImageToPromptWorkflow
+from src.utils.streamlit_utils import StreamlitLogger
 
 # Import Scripts for Buttons
 try:
@@ -46,73 +49,117 @@ os.makedirs(PROCESSED_DIR, exist_ok=True)
 # Initialize Components
 storage = ImageLogsStorage()
 
-# --- Turbo Agent Studio ---
-with st.expander("⚙️ Turbo Agent Studio", expanded=False):
-    st.info("Edit the instructions for the Turbo Agent and test immediately without queuing.")
+# --- Workflow Configuration Studio ---
+with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
+    st.info("Edit Agent Backstories and Task Descriptions for the workflow.")
     
-    col_edit, col_test = st.columns(2)
+    col_edit, col_test = st.columns([1.5, 1])
     
     # Paths
     base_workflow_dir = os.path.join(os.path.dirname(__file__), '..', 'src', 'workflows')
+    
+    # Turbo Paths
+    path_turbo_agent = os.path.join(base_workflow_dir, 'turbo_agent.txt')
     path_framework = os.path.join(base_workflow_dir, 'turbo_framework.txt')
     path_constraints = os.path.join(base_workflow_dir, 'turbo_constraints.txt')
     path_example = os.path.join(base_workflow_dir, 'turbo_example.txt')
     path_compiled = os.path.join(base_workflow_dir, 'turbo_prompt_template.txt')
     
+    # Analyst Paths
+    path_analyst_agent = os.path.join(base_workflow_dir, 'analyst_agent.txt')
+    path_analyst_task = os.path.join(base_workflow_dir, 'analyst_task.txt')
+    
+    # Helper
+    def load_content(path):
+        if os.path.exists(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            except:
+                return ""
+        return ""
+
     # -- Editor --
     with col_edit:
-        st.subheader("📝 Prompt Editor")
+        st.subheader("📝 Editor")
         
-        def load_content(path):
-            if os.path.exists(path):
-                try:
-                    with open(path, 'r', encoding='utf-8') as f:
-                        return f.read()
-                except:
-                    return ""
-            return ""
-
-        # Tabs for structural editing
-        tab_fw, tab_cs, tab_ex = st.tabs(["Framework", "Constraints", "Example"])
+        # Tabs for Agents
+        agent_tab_analyst, agent_tab_turbo = st.tabs(["🕵️ Analyst Agent", "⚡ Turbo Agent"])
         
-        with tab_fw:
-            st.caption("The core logical flow and 11-point framework.")
-            content_fw = st.text_area("Framework", value=load_content(path_framework), height=500, key="editor_fw", label_visibility="collapsed")
-        
-        with tab_cs:
-            st.caption("Detailed constraints, requirements, and output format.")
-            content_cs = st.text_area("Constraints", value=load_content(path_constraints), height=500, key="editor_cs", label_visibility="collapsed")
+        # --- Analyst Agent Tab ---
+        with agent_tab_analyst:
+            st.markdown("### Analyst Configuration")
             
-        with tab_ex:
-            st.caption("The full example output used for few-shot prompting.")
-            content_ex = st.text_area("Example", value=load_content(path_example), height=500, key="editor_ex", label_visibility="collapsed")
+            tab_analyst_agent, tab_analyst_task = st.tabs(["Agent Backstory", "Task Description"])
+            
+            with tab_analyst_agent:
+                st.caption("The 'Backstory' and personality of the Analyst Agent.")
+                content_analyst_agent = st.text_area("Analyst Backstory", value=load_content(path_analyst_agent), height=400, key="editor_analyst_agent")
+                
+            with tab_analyst_task:
+                st.caption("The exact instructions for the Image Analysis task. Use `{image_path}` as placeholder.")
+                content_analyst_task = st.text_area("Analyst Task", value=load_content(path_analyst_task), height=400, key="editor_analyst_task")
+            
+            if st.button("Save Analyst Configuration"):
+                try:
+                    with open(path_analyst_agent, 'w', encoding='utf-8') as f: f.write(content_analyst_agent)
+                    with open(path_analyst_task, 'w', encoding='utf-8') as f: f.write(content_analyst_task)
+                    st.success("✅ Analyst configuration saved!")
+                except Exception as e:
+                    st.error(f"Failed to save: {e}")
 
-        # Save Logic
-        if st.button("Save Configuration"):
-            try:
-                # 1. Save individual parts
-                with open(path_framework, 'w', encoding='utf-8') as f: f.write(content_fw)
-                with open(path_constraints, 'w', encoding='utf-8') as f: f.write(content_cs)
-                with open(path_example, 'w', encoding='utf-8') as f: f.write(content_ex)
+        # --- Turbo Agent Tab ---
+        with agent_tab_turbo:
+            st.markdown("### Turbo Configuration")
+            
+            tab_turbo_agent, tab_turbo_task = st.tabs(["Agent Backstory", "Task Template"])
+            
+            with tab_turbo_agent:
+                st.caption("The 'Backstory' and personality of the Turbo Engineer Agent.")
+                content_turbo_agent = st.text_area("Turbo Agent Backstory", value=load_content(path_turbo_agent), height=400, key="editor_turbo_agent")
+            
+            with tab_turbo_task:
+                st.caption("Construct the Prompt Generation Task Description (Template).")
+                # Sub-tabs for the components
+                sub_fw, sub_cs, sub_ex = st.tabs(["Framework", "Constraints", "Example"])
                 
-                # 2. Compile into the single template file
-                # Join with newlines to ensure separation between sections
-                compiled_content = content_fw + "\n" + content_cs + "\n" + content_ex
-                
-                with open(path_compiled, 'w', encoding='utf-8') as f:
-                    f.write(compiled_content)
+                with sub_fw:
+                    content_fw = st.text_area("Framework", value=load_content(path_framework), height=300, key="editor_fw", label_visibility="collapsed")
+                with sub_cs:
+                    content_cs = st.text_area("Constraints", value=load_content(path_constraints), height=300, key="editor_cs", label_visibility="collapsed")
+                with sub_ex:
+                    content_ex = st.text_area("Example", value=load_content(path_example), height=300, key="editor_ex", label_visibility="collapsed")
+
+            if st.button("Save Turbo Configuration"):
+                try:
+                    # Save Backstory
+                    with open(path_turbo_agent, 'w', encoding='utf-8') as f: f.write(content_turbo_agent)
                     
-                st.success("✅ Saved & Compiled! 'turbo_prompt_template.txt' updated.")
-            except Exception as e:
-                st.error(f"Failed to save: {e}")
+                    # Save Task Template Components
+                    with open(path_framework, 'w', encoding='utf-8') as f: f.write(content_fw)
+                    with open(path_constraints, 'w', encoding='utf-8') as f: f.write(content_cs)
+                    with open(path_example, 'w', encoding='utf-8') as f: f.write(content_ex)
+                    
+                    # Compile Task Template
+                    compiled_content = content_fw + "\n" + content_cs + "\n" + content_ex
+                    with open(path_compiled, 'w', encoding='utf-8') as f: f.write(compiled_content)
+                    
+                    st.success("✅ Turbo configuration saved & compiled!")
+                except Exception as e:
+                    st.error(f"Failed to save: {e}")
 
     # -- Tester --
     with col_test:
         st.subheader("🧪 Live Tester")
         st.markdown(f"**Persona:** {kol_persona}")
-        st.caption("Using 'Turbo' workflow logic.")
+        st.caption("Runs the full workflow (Analyst + Turbo) with current settings.")
         
         test_image = st.file_uploader("Upload a test image", type=['png', 'jpg', 'jpeg', 'webp'], key="test_uploader")
+        
+        # Log Placeholder
+        with st.expander("📝 Live Agent Logs", expanded=True):
+            log_placeholder = st.empty()
+            log_placeholder.info("Logs will appear here during generation...")
         
         if test_image and st.button("Run Test Generation"):
             with st.spinner("Analyzing and Generating Prompt..."):
@@ -125,19 +172,28 @@ with st.expander("⚙️ Turbo Agent Studio", expanded=False):
                     with open(temp_path, "wb") as f:
                         f.write(test_image.getbuffer())
                         
-                    # Initialize Workflow
-                    workflow = ImageToPromptWorkflow(verbose=False)
+                    # Initialize Workflow with verbose=True
+                    workflow = ImageToPromptWorkflow(verbose=True)
                     
-                    # Run Process
-                    result = asyncio.run(workflow.process(
-                        image_path=temp_path,
-                        persona_name=kol_persona,
-                        workflow_type="turbo" 
-                    ))
+                    # Setup Logger
+                    logger = StreamlitLogger(log_placeholder)
+                    
+                    # Run Process with stdout capture
+                    with contextlib.redirect_stdout(logger):
+                        result = asyncio.run(workflow.process(
+                            image_path=temp_path,
+                            persona_name=kol_persona,
+                            workflow_type="turbo" 
+                        ))
                     
                     generated_prompt = result.get('generated_prompt', "No prompt generated.")
+                    descriptive_prompt = result.get('descriptive_prompt', "No analysis available.")
                     
                     st.success("Generation Complete!")
+                    
+                    with st.expander("Show Analysis Output", expanded=False):
+                        st.text_area("Analysis Output", value=descriptive_prompt, height=200)
+                        
                     st.text_area("Generated Prompt", value=generated_prompt, height=400)
                     
                     # Clean up temp file
@@ -146,6 +202,9 @@ with st.expander("⚙️ Turbo Agent Studio", expanded=False):
                         
                 except Exception as e:
                     st.error(f"Test Run Failed: {e}")
+                    # Also print error to logs if possible
+                    if 'logger' in locals():
+                        logger.write(f"\nERROR: {e}")
 
 # --- 1. Workflow Mode ---
 st.header("1. Input Configuration")

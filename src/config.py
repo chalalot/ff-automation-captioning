@@ -88,6 +88,10 @@ class GlobalConfig:
     COMFYUI_MAX_POLL_TIME = int(os.getenv("COMFYUI_MAX_POLL_TIME", "3600"))  # Max time to wait for completion (1 hour)
     COMFYUI_MAX_RETRIES = int(os.getenv("COMFYUI_MAX_RETRIES", "3"))
 
+    # Kling AI
+    KLING_ACCESS_KEY = os.getenv("KLING_ACCESS_KEY")
+    KLING_SECRET_KEY = os.getenv("KLING_SECRET_KEY")
+
     # Google Cloud Storage (Image Storage)
     # Try Streamlit secrets first, then fall back to env vars
     _use_streamlit_secrets = False
