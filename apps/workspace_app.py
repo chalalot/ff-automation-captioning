@@ -5,6 +5,7 @@ import asyncio
 import pandas as pd
 import re
 import contextlib
+import json
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -12,6 +13,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.config import GlobalConfig
 from src.database.image_logs_storage import ImageLogsStorage
 from src.workflows.image_to_prompt_workflow import ImageToPromptWorkflow
+from src.workflows.config_manager import WorkflowConfigManager
 from src.utils.streamlit_utils import StreamlitLogger
 
 # Import Scripts for Buttons
@@ -30,9 +32,18 @@ st.set_page_config(page_title="Workspace - CrewAI Image Workflow", layout="wide"
 # Title
 st.title("🚀 Workspace: Input & Generation")
 
+# Initialize Config Manager
+config_manager = WorkflowConfigManager()
+
 # Sidebar Configuration
 st.sidebar.header("Configuration")
-kol_persona = st.sidebar.selectbox("KOL Persona", ["Jennie", "Sephera", "Mika", "Nya", "Emi", "Roxie"])
+
+# Load personas from config
+available_personas = config_manager.get_personas()
+if not available_personas:
+    available_personas = ["Jennie"] # Fallback
+
+kol_persona = st.sidebar.selectbox("KOL Persona", available_personas)
 workflow_choice = st.sidebar.selectbox("Workflow Type", ["Turbo", "WAN2.2"])
 limit_choice = st.sidebar.number_input("Batch Limit", min_value=1, max_value=1000, value=10)
 
@@ -49,15 +60,61 @@ os.makedirs(PROCESSED_DIR, exist_ok=True)
 # Initialize Components
 storage = ImageLogsStorage()
 
+# --- Persona Configuration ---
+with st.expander("👤 Persona Configuration", expanded=False):
+    st.info("Configure specific settings for each Persona.")
+    
+    col_p_select, col_p_edit = st.columns([1, 2])
+    
+    with col_p_select:
+        selected_persona_config = st.selectbox("Select Persona to Edit", available_personas, key="persona_config_select")
+        
+        # Load current config
+        current_p_config = config_manager.get_persona_config(selected_persona_config)
+        current_type = current_p_config.get("type", "instagirl")
+        available_types = config_manager.get_persona_types()
+        
+        new_type = st.selectbox("Persona Type", available_types, index=available_types.index(current_type) if current_type in available_types else 0)
+        
+        current_hair_color = current_p_config.get("hair_color", "")
+        new_hair_color = st.text_input("Hair Color", value=current_hair_color)
+
+    with col_p_edit:
+        current_hairstyles = current_p_config.get("hairstyles", [])
+        hairstyles_text = "\n".join(current_hairstyles)
+        
+        new_hairstyles_text = st.text_area("Hairstyle Keywords (One per line)", value=hairstyles_text, height=200)
+        
+        if st.button("Save Persona Configuration"):
+            new_hairstyles_list = [line.strip() for line in new_hairstyles_text.split('\n') if line.strip()]
+            
+            update_data = {
+                "type": new_type,
+                "hair_color": new_hair_color,
+                "hairstyles": new_hairstyles_list
+            }
+            config_manager.update_persona_config(selected_persona_config, update_data)
+            st.success(f"✅ Configuration for {selected_persona_config} saved!")
+
+
 # --- Workflow Configuration Studio ---
 with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
-    st.info("Edit Agent Backstories and Task Descriptions for the workflow.")
+    st.info("Edit Agent Backstories and Task Descriptions for the workflow. These are organized by 'Persona Type'.")
+    
+    # Select Persona Type to Edit
+    available_types = config_manager.get_persona_types()
+    selected_type_for_editor = st.selectbox("Select Persona Type Template to Edit", available_types, key="editor_type_select")
     
     col_edit, col_test = st.columns([1.5, 1])
     
-    # Paths
-    base_workflow_dir = os.path.join(os.path.dirname(__file__), '..', 'src', 'workflows')
+    # Paths - Dynamic based on selected type
+    base_workflow_dir = os.path.join(os.path.dirname(__file__), '..', 'src', 'workflows', 'templates', selected_type_for_editor)
     
+    # Ensure directory exists (create if new type added manually but folder missing)
+    if not os.path.exists(base_workflow_dir):
+        st.warning(f"Template directory for '{selected_type_for_editor}' does not exist. Saving will create it.")
+        os.makedirs(base_workflow_dir, exist_ok=True)
+
     # Turbo Paths
     path_turbo_agent = os.path.join(base_workflow_dir, 'turbo_agent.txt')
     path_framework = os.path.join(base_workflow_dir, 'turbo_framework.txt')
@@ -81,7 +138,7 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
 
     # -- Editor --
     with col_edit:
-        st.subheader("📝 Editor")
+        st.subheader(f"📝 Editor ({selected_type_for_editor})")
         
         # Tabs for Agents
         agent_tab_analyst, agent_tab_turbo = st.tabs(["🕵️ Analyst Agent", "⚡ Turbo Agent"])
@@ -100,11 +157,11 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
                 st.caption("The exact instructions for the Image Analysis task. Use `{image_path}` as placeholder.")
                 content_analyst_task = st.text_area("Analyst Task", value=load_content(path_analyst_task), height=400, key="editor_analyst_task")
             
-            if st.button("Save Analyst Configuration"):
+            if st.button("Save Analyst Configuration", key="save_analyst"):
                 try:
                     with open(path_analyst_agent, 'w', encoding='utf-8') as f: f.write(content_analyst_agent)
                     with open(path_analyst_task, 'w', encoding='utf-8') as f: f.write(content_analyst_task)
-                    st.success("✅ Analyst configuration saved!")
+                    st.success(f"✅ Analyst configuration for '{selected_type_for_editor}' saved!")
                 except Exception as e:
                     st.error(f"Failed to save: {e}")
 
@@ -130,7 +187,7 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
                 with sub_ex:
                     content_ex = st.text_area("Example", value=load_content(path_example), height=300, key="editor_ex", label_visibility="collapsed")
 
-            if st.button("Save Turbo Configuration"):
+            if st.button("Save Turbo Configuration", key="save_turbo"):
                 try:
                     # Save Backstory
                     with open(path_turbo_agent, 'w', encoding='utf-8') as f: f.write(content_turbo_agent)
@@ -144,7 +201,7 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
                     compiled_content = content_fw + "\n" + content_cs + "\n" + content_ex
                     with open(path_compiled, 'w', encoding='utf-8') as f: f.write(compiled_content)
                     
-                    st.success("✅ Turbo configuration saved & compiled!")
+                    st.success(f"✅ Turbo configuration for '{selected_type_for_editor}' saved & compiled!")
                 except Exception as e:
                     st.error(f"Failed to save: {e}")
 
@@ -152,6 +209,11 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
     with col_test:
         st.subheader("🧪 Live Tester")
         st.markdown(f"**Persona:** {kol_persona}")
+        
+        # Display current persona type info
+        p_conf = config_manager.get_persona_config(kol_persona)
+        st.caption(f"Type: **{p_conf.get('type', 'Unknown')}** | Hair: {p_conf.get('hair_color', 'N/A')}")
+        
         st.caption("Runs the full workflow (Analyst + Turbo) with current settings.")
         
         test_image = st.file_uploader("Upload a test image", type=['png', 'jpg', 'jpeg', 'webp'], key="test_uploader")

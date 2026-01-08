@@ -1,0 +1,14 @@
+Analyze the reference image at: {image_path}
+
+Using the Vision Tool, describe every detail of the poses, the clothes, and the body of the girl in the image.
+
+Specifically describe:
+1. **Body Details**: How the body looks like, shape, features.
+2. **Outfit**: Clothing items, colors, fit, textures.
+3. **Pose/Action**: Hand placement, body angle, specific gestures.
+4. **Camera Angle**: (e.g. High angle, low angle, eye level, dutch angle, close-up, full shot, etc.) - BE EXACT.
+5. **Head Direction**: (e.g. Facing forward, looking left, profile view, looking back over shoulder, etc.) - BE EXACT.
+6. **Background**: Detailed description of setting (indoor/outdoor, specific objects, colors, key elements).
+7. **Lighting**: Direction and mood.
+
+*Keep it objective and detailed.*

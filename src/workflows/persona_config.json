@@ -1,0 +1,62 @@
+{
+  "personas": {
+    "Jennie": {
+      "type": "instagirl",
+      "hair_color": "Honey-blonde",
+      "hairstyles": [
+        "long honey-blonde hair tied in a half-up bun with loose face-framing strands",
+        "thick and very long honey blonde hair with hippie style",
+        "thick and very long honey blonde hair with loose waves",
+        "long blonde hair messy bun with loose front strands"
+      ]
+    },
+    "Sephera": {
+      "type": "instagirl",
+      "hair_color": "Dark brown",
+      "hairstyles": [
+        "dark brown long hair with loose waves",
+        "long dark brown hair, wet and sunlit, sticking gently to skin",
+        "long dark brown hair",
+        "long dark brown hair, slightly damp, sunlit reflections",
+        "long dark straight hair, slightly wet and sun-lit, strands clinging softly to her shoulder"
+      ]
+    },
+    "Mika": {
+      "type": "instagirl",
+      "hair_color": "Black",
+      "hairstyles": [
+        "Korean see-through bangs over forehead, effortless chic messy bun hairstyle",
+        "long black hair styled in an elegant updo, parted slightly off-center, some loose strands framing face, smooth and neat with natural shine"
+      ]
+    },
+    "Nya": {
+      "type": "instagirl",
+      "hair_color": "Chestnut",
+      "hairstyles": [
+        "long curly chestnut hair reaching her chest",
+        "long dark brown hair, styled in loose curls, parted at center, voluminous waves framing face"
+      ]
+    },
+    "Emi": {
+      "type": "instagirl",
+      "hair_color": "Platinum blonde",
+      "hairstyles": [
+        "short platinum blonde bob with messy layered waves, volumized hair, layered hairstyle, dynamic hair flow, hair shine enhancement, side part hairstyle, deep side part, one side tucked behind ear, asymmetrical hairstyle"
+      ]
+    },
+    "Roxie": {
+      "type": "instagirl",
+      "hair_color": "Pastel pink",
+      "hairstyles": [
+        "thick and strong, long wavy pastel pink hair parted at the center, styled with two space buns on top of the head, and soft straight bangs covering the forehead",
+        "long straight pastel hair cascading down the back, glossy texture reflecting key light.",
+        "long straight platinum white hair cascading down back, glossy texture reflecting light."
+      ]
+    }
+  },
+  "persona_types": [
+    "instagirl",
+    "gymer",
+    "dancer"
+  ]
+}
