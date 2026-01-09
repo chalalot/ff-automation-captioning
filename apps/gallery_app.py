@@ -6,6 +6,7 @@ import json
 import zipfile
 import io
 import pandas as pd
+import math
 from datetime import datetime
 from PIL import Image
 
@@ -34,6 +35,45 @@ if "results" not in st.session_state:
 st.header(f"Results Gallery ({OUTPUT_DIR})")
 
 # --- Helper Functions ---
+@st.cache_data(ttl=30, show_spinner="Loading gallery data...")
+def load_gallery_data(output_dir):
+    """
+    Fetch DB records and file list, then merge them.
+    Cached to prevent lag on every interaction.
+    """
+    # 1. Fetch all completed executions for metadata lookup
+    all_executions = storage.get_all_completed_executions()
+    execution_map = {}
+    for exc in all_executions:
+        if exc['result_image_path']:
+            # Normalize to filename
+            fname = os.path.basename(exc['result_image_path'])
+            execution_map[fname] = exc
+    
+    # 2. List files and build data list
+    all_files = get_sorted_images(output_dir)
+    
+    items = []
+    for f in all_files:
+        full_path = os.path.join(output_dir, f)
+        mtime = os.path.getmtime(full_path)
+        dt = datetime.fromtimestamp(mtime)
+        date_str = dt.strftime("%Y-%m-%d")
+        
+        # Get Metadata
+        record = execution_map.get(f)
+        persona = record['persona'] if record and 'persona' in record and record['persona'] else "Unknown"
+        
+        items.append({
+            "filename": f,
+            "path": full_path,
+            "mtime": mtime,
+            "date": date_str,
+            "persona": persona,
+            "record": record
+        })
+    return items
+
 def extract_metadata_from_image(file_path):
     """
     Extracts seed and prompt from ComfyUI image metadata.
@@ -102,40 +142,12 @@ if "approvals_loaded" not in st.session_state:
 # -------------------------
 
 if st.button("Refresh Gallery"):
+    load_gallery_data.clear()
     st.rerun()
 
 if os.path.exists(OUTPUT_DIR):
-    # 1. Fetch all completed executions for metadata lookup
-    all_executions = storage.get_all_completed_executions()
-    execution_map = {}
-    for exc in all_executions:
-        if exc['result_image_path']:
-            # Normalize to filename
-            fname = os.path.basename(exc['result_image_path'])
-            execution_map[fname] = exc
-    
-    # 2. List files and build data list
-    all_files = get_sorted_images(OUTPUT_DIR)
-    
-    gallery_items = []
-    for f in all_files:
-        full_path = os.path.join(OUTPUT_DIR, f)
-        mtime = os.path.getmtime(full_path)
-        dt = datetime.fromtimestamp(mtime)
-        date_str = dt.strftime("%Y-%m-%d")
-        
-        # Get Metadata
-        record = execution_map.get(f)
-        persona = record['persona'] if record and 'persona' in record and record['persona'] else "Unknown"
-        
-        gallery_items.append({
-            "filename": f,
-            "path": full_path,
-            "mtime": mtime,
-            "date": date_str,
-            "persona": persona,
-            "record": record
-        })
+    # Load data (cached)
+    gallery_items = load_gallery_data(OUTPUT_DIR)
     
     if not gallery_items:
             st.info("No results found yet.")
@@ -168,8 +180,48 @@ if os.path.exists(OUTPUT_DIR):
         reverse_sort = (sort_order == "Newest First")
         filtered_items.sort(key=lambda x: x['mtime'], reverse=reverse_sort)
 
+        # --- Pagination ---
+        total_items = len(filtered_items)
+        paginated_items = []
+
+        if total_items > 0:
+            col_p1, col_p2, col_p3 = st.columns([1, 2, 2])
+            with col_p1:
+                items_per_page = st.selectbox("Images per page", [20, 50, 100, 200], index=1)
+            
+            total_pages = math.ceil(total_items / items_per_page)
+            
+            if "gallery_page" not in st.session_state:
+                st.session_state.gallery_page = 1
+                
+            # Ensure valid page
+            if st.session_state.gallery_page > total_pages:
+                st.session_state.gallery_page = total_pages
+            if st.session_state.gallery_page < 1:
+                st.session_state.gallery_page = 1
+                
+            with col_p2:
+                st.session_state.gallery_page = st.number_input(
+                    f"Page (Total: {total_pages})", 
+                    min_value=1, 
+                    max_value=total_pages, 
+                    value=st.session_state.gallery_page
+                )
+            
+            with col_p3:
+                st.caption(f"Total Images: {total_items}")
+
+            start_idx = (st.session_state.gallery_page - 1) * items_per_page
+            end_idx = start_idx + items_per_page
+            
+            paginated_items = filtered_items[start_idx:end_idx]
+            
+            st.caption(f"Showing images {start_idx + 1}-{min(end_idx, total_items)} of {total_items}")
+        else:
+            paginated_items = []
+
         # --- Download Logic (Filtered Items) ---
-        # We iterate over filtered items to check approvals
+        # We iterate over filtered items to check approvals (global check, not just visible page)
         approved_files = []
         for item in filtered_items:
             base_name = os.path.splitext(item['filename'])[0]
@@ -294,7 +346,7 @@ if os.path.exists(OUTPUT_DIR):
             # Group by date string
             # Note: items are already sorted by time
             grouped = {}
-            for item in filtered_items:
+            for item in paginated_items:
                 d = item['date']
                 if d not in grouped: grouped[d] = []
                 grouped[d].append(item)
@@ -304,7 +356,7 @@ if os.path.exists(OUTPUT_DIR):
                 st.subheader(f"📅 {date_key}")
                 render_grid(grouped[date_key])
         else:
-            render_grid(filtered_items)
+            render_grid(paginated_items)
 
 else:
     st.error(f"Output directory '{OUTPUT_DIR}' does not exist.")
