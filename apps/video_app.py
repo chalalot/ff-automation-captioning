@@ -3,6 +3,9 @@ import os
 import sys
 import asyncio
 import contextlib
+import pandas as pd
+import requests
+import uuid
 
 # Path setup
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -10,6 +13,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.config import GlobalConfig
 from src.workflows.video_storyboard_workflow import VideoStoryboardWorkflow
 from src.utils.streamlit_utils import get_sorted_images, StreamlitLogger
+from src.database.video_logs_storage import VideoLogsStorage
+from scripts.merge_videos_test import merge_videos
+
+# Initialize Storage
+video_storage = VideoLogsStorage()
 
 # Page Config
 st.set_page_config(page_title="Video - CrewAI Image Workflow", layout="wide")
@@ -96,6 +104,22 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
             st.success("✅ Configuration saved!")
         except Exception as e:
             st.error(f"Failed to save: {e}")
+
+# --- Queue Status Section ---
+with st.expander("📊 Video Generation History", expanded=False):
+    recent_executions = video_storage.get_recent_executions(limit=10)
+    if recent_executions:
+        # Convert to DataFrame
+        df = pd.DataFrame(recent_executions)
+        # Select columns
+        cols_to_show = ['id', 'execution_id', 'status', 'created_at', 'prompt']
+        
+        st.dataframe(df[cols_to_show], use_container_width=True)
+        
+        if st.button("Refresh History"):
+            st.rerun()
+    else:
+        st.info("No video generation history found.")
 
 st.divider()
 
@@ -229,7 +253,8 @@ if st.button("Draft Generate Video Prompts", disabled=(st.session_state.selected
     if st.session_state.selected_video_source:
         
         with st.expander("📝 Live Agent Logs", expanded=True):
-            log_placeholder = st.empty()
+            with st.container(height=300):
+                log_placeholder = st.empty()
             logger = StreamlitLogger(log_placeholder)
         
         with st.spinner("Brainstorming Video Prompts... This may take a moment."):
@@ -270,89 +295,255 @@ if "video_results" in st.session_state and st.session_state.video_results:
         st.code(prompt, language="text")
         st.divider()
 
-# --- 4. Kling AI Generation ---
-st.subheader("4. Kling AI Video Generation")
+# --- 4. Kling AI Generation (ComfyUI Partner Node) ---
+st.subheader("4. Kling AI Video Generation (ComfyUI)")
 
-from src.third_parties.kling_client import KlingClient
+from src.third_parties.comfyui_client import ComfyUIClient
 
 # Initialize Client
 try:
-    kling_client = KlingClient()
+    comfy_client = ComfyUIClient()
     client_available = True
 except Exception as e:
-    st.error(f"Failed to initialize Kling Client: {e}")
+    st.error(f"Failed to initialize ComfyUI Client: {e}")
     client_available = False
 
 if client_available:
-    # Initialize session state for Kling
-    if "kling_task_id" not in st.session_state:
-        st.session_state.kling_task_id = None
+    # Initialize session state for Batch
+    if "batch_task_ids" not in st.session_state:
+        st.session_state.batch_task_ids = []
+    if "batch_id" not in st.session_state:
+        st.session_state.batch_id = None
+    if "batch_video_paths" not in st.session_state:
+        st.session_state.batch_video_paths = []
 
+    # Display Prompt Selection (Optional Single Queue) OR Batch Queue
     if "video_results" in st.session_state and st.session_state.video_results:
         variations = st.session_state.video_results["variations"]
+        st.info(f"Available Variations: {len(variations)}")
         
-        # Selection for Prompt
-        prompt_options = {f"Variation {v['variation']}: {v['concept_name']}": v['prompt'] for v in variations}
-        selected_option = st.selectbox("Select Prompt for Video Generation", list(prompt_options.keys()) + ["Custom Prompt"])
-        
-        if selected_option == "Custom Prompt":
-            final_prompt = st.text_area("Enter Custom Prompt", value="Cinematic shot, high quality, 4k")
-        else:
-            final_prompt = st.text_area("Selected Prompt", value=prompt_options[selected_option])
-            
         duration = st.selectbox("Duration", ["5", "10"], index=0)
         
-        # 1. Queue Button
-        if st.button("🚀 Queue Video Generation"):
-            if not st.session_state.selected_video_source:
-                st.error("No source image selected!")
+        col_q1, col_q2 = st.columns(2)
+        
+        with col_q1:
+            st.markdown("### Single Queue")
+            # Selection for Prompt
+            prompt_options = {f"Variation {v['variation']}: {v['concept_name']}": v['prompt'] for v in variations}
+            selected_option = st.selectbox("Select Prompt", list(prompt_options.keys()) + ["Custom Prompt"])
+            
+            if selected_option == "Custom Prompt":
+                final_prompt = st.text_area("Enter Custom Prompt", value="Cinematic shot, high quality, 4k")
             else:
-                with st.spinner("Queueing task to Kling AI..."):
-                    try:
-                        task_id = kling_client.generate_video(
-                            prompt=final_prompt,
-                            image=st.session_state.selected_video_source,
-                            duration=duration
-                        )
-                        st.session_state.kling_task_id = task_id
-                        st.success(f"Task Queued! ID: {task_id}")
-                    except Exception as e:
-                        st.error(f"Failed to queue task: {e}")
+                final_prompt = st.text_area("Selected Prompt", value=prompt_options[selected_option])
 
-    # Check Status Section (Always visible)
-    st.markdown("### Status & Download")
+            if st.button("🚀 Queue Single Video"):
+                if not st.session_state.selected_video_source:
+                    st.error("No source image selected!")
+                else:
+                    with st.spinner("Queueing task..."):
+                        try:
+                            task_id = asyncio.run(comfy_client.generate_video_kling(
+                                prompt=final_prompt,
+                                image_path=st.session_state.selected_video_source,
+                                duration=duration
+                            ))
+                            # Log to DB
+                            video_storage.log_execution(task_id, final_prompt, st.session_state.selected_video_source)
+                            st.success(f"Task Queued! ID: {task_id}")
+                        except Exception as e:
+                            st.error(f"Failed to queue task: {e}")
 
-    # Input for Task ID (allow manual entry or use session)
-    task_id_input = st.text_input("Task ID", value=st.session_state.kling_task_id if st.session_state.kling_task_id else "")
+        with col_q2:
+            st.markdown("### Batch Queue")
+            st.write(f"Queue all {len(variations)} variations at once.")
+            
+            if st.button("🚀🚀 Queue All Variations"):
+                if not st.session_state.selected_video_source:
+                    st.error("No source image selected!")
+                else:
+                    st.session_state.batch_task_ids = [] # Reset batch
+                    st.session_state.batch_video_paths = [] # Reset paths
+                    
+                    # Generate Batch ID
+                    batch_id = str(uuid.uuid4())
+                    st.session_state.batch_id = batch_id
+                    
+                    progress_bar = st.progress(0)
+                    
+                    with st.spinner(f"Queueing batch {batch_id[:8]}..."):
+                        for idx, item in enumerate(variations):
+                            prompt = item.get("prompt")
+                            try:
+                                task_id = asyncio.run(comfy_client.generate_video_kling(
+                                    prompt=prompt,
+                                    image_path=st.session_state.selected_video_source,
+                                    duration=duration
+                                ))
+                                # Log to DB with batch_id
+                                video_storage.log_execution(task_id, prompt, st.session_state.selected_video_source, batch_id=batch_id)
+                                st.session_state.batch_task_ids.append(task_id)
+                                
+                            except Exception as e:
+                                st.error(f"Failed to queue variation {idx+1}: {e}")
+                            
+                            progress_bar.progress((idx + 1) / len(variations))
+                            
+                    st.success(f"Batch Queued! {len(st.session_state.batch_task_ids)} tasks started.")
+                    st.write("Batch ID:", st.session_state.batch_id)
+                    st.write("Task IDs:", st.session_state.batch_task_ids)
 
-    if st.button("🔄 Check Status & Download"):
-        if not task_id_input:
-            st.error("Please enter a Task ID.")
+    # --- Batch Status & Download ---
+    st.divider()
+    st.markdown("### 📦 Batch Status, Download & Merge")
+    
+    # 1. Recover Pending Batches
+    with st.expander("🔄 Recover Incomplete Batch", expanded=not st.session_state.batch_task_ids):
+        incomplete_batches = video_storage.get_incomplete_batches()
+        if incomplete_batches:
+            st.write(f"Found {len(incomplete_batches)} incomplete batches in database.")
+            
+            # Create selection options
+            batch_options = {f"{b['created_at']} (ID: {b['batch_id'][:8]}...) - {b['count']} tasks": b['batch_id'] for b in incomplete_batches}
+            
+            selected_batch_label = st.selectbox("Select Batch to Recover", list(batch_options.keys()))
+            
+            if st.button("Load Selected Batch"):
+                selected_batch_id = batch_options[selected_batch_label]
+                executions = video_storage.get_batch_executions(selected_batch_id)
+                
+                # Load into session state
+                st.session_state.batch_id = selected_batch_id
+                st.session_state.batch_task_ids = [e['execution_id'] for e in executions]
+                st.session_state.batch_video_paths = [] # Reset paths
+                
+                st.success(f"Loaded batch {selected_batch_id} with {len(executions)} tasks.")
+                st.rerun()
         else:
-            with st.spinner(f"Checking status for {task_id_input}..."):
-                try:
-                    status_data = kling_client.get_video_status(task_id_input)
-                    status = status_data.get("task_status")
+            st.info("No incomplete batches found in database.")
+
+    # 2. Process Current Batch
+    if st.session_state.batch_task_ids:
+        st.write(f"Current Batch ID: `{st.session_state.batch_id}`")
+        st.write(f"Tasks: {len(st.session_state.batch_task_ids)}")
+        
+        if st.button("🔄 Check Batch Status & Merge"):
+            completed_videos = [] # List of paths
+            pending_count = 0
+            failed_count = 0
+            
+            # Temporary directory for downloads
+            raw_video_dir = "video-raw"
+            os.makedirs(raw_video_dir, exist_ok=True)
+            
+            with st.spinner("Checking status for all tasks..."):
+                # Use a limited number of columns for display to avoid layout issues
+                num_cols = min(len(st.session_state.batch_task_ids), 4)
+                if num_cols > 0:
+                    status_cols = st.columns(num_cols)
+                
+                for idx, task_id in enumerate(st.session_state.batch_task_ids):
+                    col = status_cols[idx % num_cols] if num_cols > 0 else st
                     
-                    st.info(f"Status: **{status}**")
+                    # 1. Check Local DB First
+                    db_record = video_storage.get_execution(task_id)
+                    local_status = db_record.get('status') if db_record else None
+                    video_output_path = db_record.get('video_output_path') if db_record else None
                     
-                    if status == "succeed":
-                        video_url = status_data.get("video_url")
-                        if video_url:
-                            st.success("Video Generated Successfully!")
-                            st.video(video_url)
+                    is_completed_locally = False
+                    if local_status == 'completed' and video_output_path and os.path.exists(video_output_path) and os.path.getsize(video_output_path) > 0:
+                         is_completed_locally = True
+                    
+                    if is_completed_locally:
+                        with col:
+                            st.write(f"Task {task_id[-4:]}: **completed (cached)**")
+                        completed_videos.append(video_output_path)
+                        continue
+
+                    # 2. If not found locally, check ComfyUI
+                    try:
+                        status_data = asyncio.run(comfy_client.check_status_local(task_id))
+                        status = status_data.get("status")
+                        
+                        with col:
+                            st.write(f"Task {task_id[-4:]}: **{status}**")
+                        
+                        if status == "succeed":
+                            video_url = status_data.get("video_url")
+                            # We need to download the file content to merge it
+                            # Extract filename from URL or status
+                            filename = status_data.get("filename") or f"{task_id}.mp4"
+                            local_path = os.path.join(raw_video_dir, filename)
                             
-                            # Download to video-raw
-                            os.makedirs("video-raw", exist_ok=True)
-                            filename = f"kling_{task_id_input}.mp4"
-                            output_path = os.path.join("video-raw", filename)
+                            # Download if not exists or force download
+                            # Check if file exists and has size
+                            if not os.path.exists(local_path) or os.path.getsize(local_path) == 0:
+                                try:
+                                    # Use ComfyUIClient's request method or add headers manually
+                                    # Since video_url is complete, we use requests with headers if api_key exists
+                                    headers = {}
+                                    if comfy_client.api_key:
+                                        headers["Authorization"] = f"Bearer {comfy_client.api_key}"
+                                    
+                                    resp = requests.get(video_url, headers=headers)
+                                    
+                                    if resp.status_code == 200:
+                                        with open(local_path, "wb") as f:
+                                            f.write(resp.content)
+                                    else:
+                                        st.error(f"Failed to download {task_id}: HTTP {resp.status_code}")
+                                except Exception as e:
+                                    st.error(f"Download error for {task_id}: {e}")
+                                        
+                            if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+                                completed_videos.append(local_path)
+                                # Update DB
+                                video_storage.update_result(task_id, local_path, 'completed')
+                            else:
+                                st.warning(f"Video file missing for {task_id}")
                             
-                            kling_client.download_video(video_url, output_path)
-                            st.success(f"Downloaded to: `{output_path}`")
+                        elif status in ["running", "pending", "queued"]:
+                            pending_count += 1
+                        elif status == "failed":
+                            video_storage.update_result(task_id, None, 'failed')
+                            failed_count += 1
                             
-                        else:
-                            st.warning("Status is succeed but no video URL found.")
-                    elif status == "failed":
-                        st.error(f"Video generation failed. Message: {status_data.get('message', 'Unknown error')}")
-                except Exception as e:
-                    st.error(f"Error checking status: {e}")
+                    except Exception as e:
+                        st.error(f"Error checking {task_id}: {e}")
+            
+            # Display Completed Videos
+            if completed_videos:
+                st.markdown("#### Completed Videos")
+                v_cols = st.columns(min(len(completed_videos), 3))
+                for idx, v_path in enumerate(completed_videos):
+                    with v_cols[idx % 3]:
+                        st.video(v_path)
+                        st.caption(os.path.basename(v_path))
+            
+            # Merge Logic
+            if pending_count == 0:
+                if len(completed_videos) > 0:
+                    st.success(f"All tasks finished. {len(completed_videos)} successful, {failed_count} failed. Merging successful videos...")
+                    
+                    # Merge
+                    merged_output_dir = "results"
+                    os.makedirs(merged_output_dir, exist_ok=True)
+                    # Use batch ID for filename if available, else first task ID
+                    batch_label = st.session_state.batch_id[-4:] if st.session_state.batch_id else st.session_state.batch_task_ids[0][-4:]
+                    merged_filename = f"merged_batch_{batch_label}.mp4"
+                    merged_path = os.path.join(merged_output_dir, merged_filename)
+                    
+                    with st.spinner("Merging videos..."):
+                        try:
+                            merge_videos(completed_videos, merged_path)
+                            st.success("Merge Complete!")
+                            st.video(merged_path)
+                            st.markdown(f"**Merged Video Saved:** `{merged_path}`")
+                        except Exception as e:
+                            st.error(f"Merge failed: {e}")
+                else:
+                    st.error("All tasks failed or no videos available to merge.")
+            else:
+                st.info(f"Waiting for {pending_count} tasks to complete before merging. ({len(completed_videos)} ready, {failed_count} failed)")
+    else:
+        st.info("No active batch in session. Queue variations to start a batch or recover one above.")

@@ -52,6 +52,7 @@ DEFAULT_JITTER_RANGE = 0.1  # ±10% jitter to prevent thundering herd
 
 # ComfyUI configuration from GlobalConfig
 COMFYUI_API_URL = GlobalConfig.COMFYUI_API_URL
+COMFY_LOCAL_API_URL = GlobalConfig.COMFY_LOCAL_API_URL
 CLOUD_COMFY_API_URL = GlobalConfig.CLOUD_COMFY_API_URL
 COMFYUI_API_KEY = GlobalConfig.COMFYUI_API_KEY
 COMFYUI_API_TIMEOUT = GlobalConfig.COMFYUI_API_TIMEOUT
@@ -155,6 +156,7 @@ class ComfyUIClient:
         self,
         api_url: str = COMFYUI_API_URL,
         cloud_api_url: str = CLOUD_COMFY_API_URL,
+        local_api_url: str = COMFY_LOCAL_API_URL,
         api_key: Optional[str] = COMFYUI_API_KEY,
         timeout: int = COMFYUI_API_TIMEOUT,
         poll_interval: int = COMFYUI_POLL_INTERVAL,
@@ -174,6 +176,7 @@ class ComfyUIClient:
 
         self.api_url = api_url.rstrip('/')
         self.cloud_api_url = cloud_api_url.rstrip('/') if cloud_api_url else None
+        self.local_api_url = local_api_url.rstrip('/') if local_api_url else None
         self.api_key = api_key.strip() if api_key else None
         self.timeout = timeout
         self.poll_interval = poll_interval
@@ -184,7 +187,7 @@ class ComfyUIClient:
 
     async def upload_image(self, file_path: str, overwrite: bool = False) -> str:
         """
-        Upload an image to ComfyUI server.
+        Upload an image to ComfyUI server (Cloud).
         
         Args:
             file_path: Path to the image file to upload
@@ -237,6 +240,206 @@ class ComfyUIClient:
         except Exception as e:
             logger.error(f"❌ Failed to upload image: {e}")
             raise ComfyUIAPIError(f"Image upload failed: {e}")
+
+    async def upload_image_local(self, file_path: str, overwrite: bool = False) -> str:
+        """
+        Upload an image to Local ComfyUI server.
+        
+        Args:
+            file_path: Path to the image file to upload
+            overwrite: Whether to overwrite existing file
+            
+        Returns:
+            str: The filename on the server
+        """
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Image file not found: {file_path}")
+            
+        filename = os.path.basename(file_path)
+        logger.info(f"📤 Uploading image to Local ComfyUI: {filename}")
+        
+        if not self.local_api_url:
+             raise ComfyUIConfigError("COMFY_LOCAL_API_URL is not set but required for local upload.")
+             
+        url = f"{self.local_api_url}/upload/image"
+        
+        try:
+            with open(file_path, 'rb') as f:
+                files = {'image': (filename, f, 'image/png')} 
+                data = {}
+                if overwrite:
+                    data["overwrite"] = "true"
+                
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.post(url, files=files, data=data)
+                    response.raise_for_status()
+                    
+                    result = response.json()
+                    logger.info(f"✅ Local Image uploaded: {result}")
+                    
+                    # Return the name 
+                    return result.get("name")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to upload image locally: {e}")
+            raise ComfyUIAPIError(f"Local image upload failed: {e}")
+
+    async def generate_video_kling(
+        self,
+        prompt: str,
+        image_path: str,
+        duration: str = "5"
+    ) -> str:
+        """
+        Queue Kling Video Generation via Local ComfyUI Partner Node.
+        
+        Args:
+            prompt: Text prompt
+            image_path: Path to input image
+            duration: "5" or "10"
+            
+        Returns:
+            prompt_id: The ID of the queued prompt
+        """
+        if not self.local_api_url:
+            raise ComfyUIConfigError("COMFY_LOCAL_API_URL is not set.")
+
+        # 1. Upload Image to Local ComfyUI
+        server_image_name = await self.upload_image_local(image_path)
+        
+        # 2. Construct Workflow
+        # Based on user provided example
+        workflow = {
+            "38": {
+                "inputs": {
+                    "filename_prefix": "video/ComfyUI",
+                    "format": "auto",
+                    "codec": "auto",
+                    "video": [
+                        "45",
+                        0
+                    ]
+                },
+                "class_type": "SaveVideo",
+                "_meta": {
+                    "title": "Save Video"
+                }
+            },
+            "40": {
+                "inputs": {
+                    "image": server_image_name
+                },
+                "class_type": "LoadImage",
+                "_meta": {
+                    "title": "Load Image"
+                }
+            },
+            "45": {
+                "inputs": {
+                    "prompt": prompt,
+                    "negative_prompt": DEFAULT_NEGATIVE_PROMPT, 
+                    "model_name": "kling-v2-1", # Default to v2-1 as per example? Or parameterize?
+                    "cfg_scale": 0.8,
+                    "mode": "std",
+                    "aspect_ratio": "9:16", # Default? Or infer from image?
+                    "duration": duration,
+                    "start_frame": [
+                        "40",
+                        0
+                    ]
+                },
+                "class_type": "KlingImage2VideoNode",
+                "_meta": {
+                    "title": "Kling Image to Video"
+                }
+            }
+        }
+        
+        # 3. Queue Prompt
+        url = f"{self.local_api_url}/prompt"
+        
+        payload = {
+            "prompt": workflow,
+            "extra_data": {}
+        }
+        
+        # Add API Key to extra_data as requested
+        if self.api_key:
+            payload["extra_data"]["api_key_comfy_org"] = self.api_key
+            
+        logger.info(f"🔵 Queueing Kling Video at {url}")
+        
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                logger.info(f"✅ Kling Video Queued: {data}")
+                return data.get("prompt_id")
+        except Exception as e:
+            logger.error(f"❌ Failed to queue Kling video: {e}")
+            raise ComfyUIAPIError(f"Queue Kling video failed: {e}")
+
+    async def check_status_local(self, prompt_id: str) -> Dict[str, Any]:
+        """
+        Check status of a prompt on Local ComfyUI.
+        Uses /history/{prompt_id}
+        """
+        if not self.local_api_url:
+            raise ComfyUIConfigError("COMFY_LOCAL_API_URL is not set.")
+            
+        url = f"{self.local_api_url}/history/{prompt_id}"
+        
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url)
+                if response.status_code == 404:
+                    return {"status": "running"} # Not in history yet
+                    
+                response.raise_for_status()
+                history = response.json()
+                
+                if prompt_id not in history:
+                    return {"status": "running"}
+                    
+                run_data = history[prompt_id]
+                outputs = run_data.get("outputs", {})
+                
+                # Extract video output
+                video_url = None
+                for node_id, node_output in outputs.items():
+                    if "gifs" in node_output:
+                        # Handle gifs if any
+                        pass
+                    if "images" in node_output: 
+                         # SaveVideo often returns images/videos in this list with type 'video' or extension mp4
+                         for item in node_output["images"]: # 'images' key is generic for outputs
+                             fname = item.get("filename")
+                             ftype = item.get("type")
+                             subfolder = item.get("subfolder", "")
+                             
+                             # Construct download URL
+                             # /view?filename=...&subfolder=...&type=...
+                             query = f"filename={fname}&type={ftype}"
+                             if subfolder:
+                                 query += f"&subfolder={subfolder}"
+                             
+                             video_url = f"{self.local_api_url}/view?{query}"
+                             return {
+                                 "status": "succeed",
+                                 "video_url": video_url,
+                                 "filename": fname
+                             }
+                             
+                # If we have history but no video output found
+                return {
+                    "status": "failed", 
+                    "message": "Completed but no video output found"
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to check local status: {e}")
+            raise
 
     async def queue_prompt(self, prompt_workflow: Dict[str, Any]) -> str:
         """

@@ -33,6 +33,7 @@ def merge_videos(video_paths, output_path):
         print(f"Error: {e}")
         import traceback
         traceback.print_exc()
+        raise e
             
     finally:
         # Close clips to release resources

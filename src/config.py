@@ -81,6 +81,7 @@ class GlobalConfig:
 
     # ComfyUI API Settings
     COMFYUI_API_URL = os.getenv("COMFYUI_API_URL", "https://comfy-api.ez-agi.com")
+    COMFY_LOCAL_API_URL = os.getenv("COMFY_LOCAL_API_URL", "http://127.0.0.1:8188")
     CLOUD_COMFY_API_URL = os.getenv("CLOUD_COMFY_API_URL", "https://api.comfy.org/api/v1")
     COMFYUI_API_KEY = os.getenv("COMFYUI_API_KEY")
     COMFYUI_API_TIMEOUT = int(os.getenv("COMFYUI_API_TIMEOUT", "1000"))  # Request timeout (httpx client timeout)
