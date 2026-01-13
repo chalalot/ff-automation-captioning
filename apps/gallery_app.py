@@ -119,26 +119,42 @@ def extract_metadata_from_image(file_path):
         
     return metadata
 
-# --- Persistence Logic ---
+# --- Persistence & State Logic ---
 APPROVALS_FILE = os.path.join(OUTPUT_DIR, "approvals.json")
 
-def save_approvals():
-    # Save all currently True approval keys
-    approvals = [k.replace("approve_", "") for k, v in st.session_state.items() if k.startswith("approve_") and v]
-    with open(APPROVALS_FILE, "w") as f:
-        json.dump(approvals, f)
-
-# Load initial state on first run of session
-if "approvals_loaded" not in st.session_state:
+# Initialize Session State for Approvals and Selections
+if "approved_files" not in st.session_state:
+    st.session_state.approved_files = set()
     if os.path.exists(APPROVALS_FILE):
         try:
             with open(APPROVALS_FILE, "r") as f:
-                saved_approvals = json.load(f)
-            for name in saved_approvals:
-                st.session_state[f"approve_{name}"] = True
-        except Exception as e:
-            pass # approvals.json might not exist yet
-    st.session_state.approvals_loaded = True
+                saved = json.load(f)
+                st.session_state.approved_files = set(saved)
+        except Exception:
+            pass
+
+if "selected_files" not in st.session_state:
+    st.session_state.selected_files = set()
+
+def update_approvals_file():
+    try:
+        with open(APPROVALS_FILE, "w") as f:
+            json.dump(list(st.session_state.approved_files), f)
+    except Exception as e:
+        st.error(f"Failed to save approvals: {e}")
+
+def toggle_approval(base_name):
+    if base_name in st.session_state.approved_files:
+        st.session_state.approved_files.remove(base_name)
+    else:
+        st.session_state.approved_files.add(base_name)
+    update_approvals_file()
+
+def toggle_selection(filename):
+    if filename in st.session_state.selected_files:
+        st.session_state.selected_files.remove(filename)
+    else:
+        st.session_state.selected_files.add(filename)
 # -------------------------
 
 if st.button("Refresh Gallery"):
@@ -168,6 +184,53 @@ if os.path.exists(OUTPUT_DIR):
             with col_f3:
                 # Grouping
                 group_by_date = st.toggle("Group by Date", value=True)
+
+        # --- Maintenance ---
+        with st.expander("🗑️ Maintenance", expanded=False):
+            st.write("Manage unused (unapproved) images.")
+            
+            # Calculate unused
+            all_bases = set(os.path.splitext(f)[0] for f in get_sorted_images(OUTPUT_DIR))
+            approved_bases = st.session_state.approved_files
+            unused_bases = all_bases - approved_bases
+            
+            col_m1, col_m2 = st.columns([1, 1])
+            with col_m1:
+                st.metric("Total Images", len(all_bases))
+            with col_m2:
+                st.metric("Unused Images", len(unused_bases))
+                
+            if unused_bases:
+                if st.button("Delete All Unused Images", type="primary"):
+                    st.session_state.confirm_delete_unused = True
+                
+                if st.session_state.get("confirm_delete_unused", False):
+                    st.warning(f"Are you sure you want to delete {len(unused_bases)} images? This cannot be undone.")
+                    col_confirm_1, col_confirm_2 = st.columns(2)
+                    with col_confirm_1:
+                        if st.button("Yes, Delete Everything"):
+                            deleted_count = 0
+                            for base in unused_bases:
+                                # Find files starting with this base (to cover extensions)
+                                # Actually we know the extensions from all_files in get_sorted_images
+                                # But let's just look for matching files in directory
+                                for f in os.listdir(OUTPUT_DIR):
+                                    if os.path.splitext(f)[0] == base:
+                                        try:
+                                            os.remove(os.path.join(OUTPUT_DIR, f))
+                                            deleted_count += 1
+                                        except Exception as e:
+                                            st.error(f"Error deleting {f}: {e}")
+                            
+                            st.success(f"Deleted {deleted_count} files.")
+                            st.session_state.confirm_delete_unused = False
+                            load_gallery_data.clear()
+                            st.rerun()
+                    
+                    with col_confirm_2:
+                        if st.button("Cancel"):
+                            st.session_state.confirm_delete_unused = False
+                            st.rerun()
 
         # --- Filtering ---
         filtered_items = gallery_items
@@ -220,63 +283,98 @@ if os.path.exists(OUTPUT_DIR):
         else:
             paginated_items = []
 
-        # --- Download Logic (Filtered Items) ---
-        # We iterate over filtered items to check approvals (global check, not just visible page)
-        approved_files = []
-        for item in filtered_items:
-            base_name = os.path.splitext(item['filename'])[0]
-            if st.session_state.get(f"approve_{base_name}", False):
-                approved_files.append(item['path'])
+        # --- Batch Actions ---
+        selected_files = st.session_state.selected_files
         
-        if approved_files:
-            st.info(f"Selected {len(approved_files)} images for download.")
+        # Filter valid files from selection (in case files were deleted but still in session)
+        valid_selected = [f for f in selected_files if os.path.exists(os.path.join(OUTPUT_DIR, f))]
+        
+        if valid_selected:
+            st.info(f"Selected {len(valid_selected)} images.")
             
-            if st.button("Prepare Download ZIP"):
-                with st.spinner("Fetching prompts and creating ZIP..."):
-                    # Reuse async fetch function logic
-                    async def fetch_all_prompts(files):
-                        results = {}
-                        async def fetch_single(f_path):
-                            try:
-                                record = storage.get_execution_by_result_path(str(f_path))
-                                if not record or not record.get('execution_id'): return None
-                                ex_id = record['execution_id']
-                                details = await client.get_execution_details(ex_id)
-                                prompt_content = details.get('prompt')
-                                if prompt_content is None:
-                                    if 'input_overrides' in details and 'positive_prompt' in details['input_overrides']:
-                                        prompt_content = details['input_overrides']['positive_prompt']
-                                    elif 'prompt' in record:
-                                        prompt_content = record['prompt']
-                                return prompt_content
-                            except Exception:
-                                if record and 'prompt' in record: return record['prompt']
-                                return None
+            with st.container():
+                col_b1, col_b2, col_b3 = st.columns([2, 2, 4])
+                
+                with col_b1:
+                    include_txt = st.toggle("Include Metadata (.txt)", value=True)
+                    if st.button("Download Selected"):
+                        with st.spinner("Preparing ZIP..."):
+                            # Helper to fetch prompts
+                            async def fetch_prompts_map(files):
+                                results = {}
+                                async def fetch_single(f_path):
+                                    try:
+                                        record = storage.get_execution_by_result_path(str(f_path))
+                                        if not record or not record.get('execution_id'): return None
+                                        ex_id = record['execution_id']
+                                        details = await client.get_execution_details(ex_id)
+                                        prompt_content = details.get('prompt')
+                                        if prompt_content is None:
+                                            if 'input_overrides' in details and 'positive_prompt' in details['input_overrides']:
+                                                prompt_content = details['input_overrides']['positive_prompt']
+                                            elif 'prompt' in record:
+                                                prompt_content = record['prompt']
+                                        return prompt_content
+                                    except Exception:
+                                        if record and 'prompt' in record: return record['prompt']
+                                        return None
 
-                        tasks = [fetch_single(fp) for fp in files]
-                        fetched_prompts = await asyncio.gather(*tasks)
-                        for fp, p_content in zip(files, fetched_prompts):
-                            if p_content: results[fp] = p_content
-                        return results
+                                full_paths = [os.path.join(OUTPUT_DIR, f) for f in files]
+                                tasks = [fetch_single(fp) for fp in full_paths]
+                                fetched_prompts = await asyncio.gather(*tasks)
+                                
+                                for fname, p_content in zip(files, fetched_prompts):
+                                    if p_content: results[fname] = p_content
+                                return results
 
-                    prompts_map = asyncio.run(fetch_all_prompts(approved_files))
+                            prompts_map = {}
+                            if include_txt:
+                                prompts_map = asyncio.run(fetch_prompts_map(valid_selected))
 
-                    zip_buffer = io.BytesIO()
-                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                        for file_path in approved_files:
-                            zf.write(file_path, arcname=os.path.basename(file_path))
-                            if file_path in prompts_map:
-                                base_name = os.path.splitext(os.path.basename(file_path))[0]
-                                txt_filename = f"{base_name}.txt"
-                                content = prompts_map[file_path]
-                                txt_content = json.dumps(content, indent=2) if isinstance(content, (dict, list)) else str(content)
-                                zf.writestr(txt_filename, txt_content)
+                            zip_buffer = io.BytesIO()
+                            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                                for fname in valid_selected:
+                                    full_path = os.path.join(OUTPUT_DIR, fname)
+                                    zf.write(full_path, arcname=fname)
+                                    
+                                    if include_txt and fname in prompts_map:
+                                        base_name = os.path.splitext(fname)[0]
+                                        txt_filename = f"{base_name}.txt"
+                                        content = prompts_map[fname]
+                                        txt_content = json.dumps(content, indent=2) if isinstance(content, (dict, list)) else str(content)
+                                        zf.writestr(txt_filename, txt_content)
+                            
+                            st.session_state['batch_zip_buffer'] = zip_buffer.getvalue()
+                            st.success("Ready for download!")
+                    
+                    if 'batch_zip_buffer' in st.session_state and st.session_state.get('batch_zip_buffer'):
+                        st.download_button("Download ZIP", st.session_state['batch_zip_buffer'], "selected_images.zip", "application/zip")
 
-                    st.session_state['zip_buffer'] = zip_buffer.getvalue()
-                    st.success("ZIP file ready!")
-            
-            if 'zip_buffer' in st.session_state and st.session_state.get('zip_buffer'):
-                st.download_button("Download Approved Images (.zip)", st.session_state['zip_buffer'], "approved_results.zip", "application/zip")
+                with col_b2:
+                    if st.button("Delete Selected", type="primary"):
+                        st.session_state.confirm_batch_delete = True
+                    
+                    if st.session_state.get("confirm_batch_delete", False):
+                        st.warning(f"Delete {len(valid_selected)} files?")
+                        col_conf1, col_conf2 = st.columns(2)
+                        with col_conf1:
+                            if st.button("Yes, Delete"):
+                                deleted = 0
+                                for fname in valid_selected:
+                                    try:
+                                        os.remove(os.path.join(OUTPUT_DIR, fname))
+                                        st.session_state.selected_files.remove(fname)
+                                        deleted += 1
+                                    except Exception as e:
+                                        st.error(f"Error deleting {fname}: {e}")
+                                st.success(f"Deleted {deleted} files.")
+                                st.session_state.confirm_batch_delete = False
+                                load_gallery_data.clear()
+                                st.rerun()
+                        with col_conf2:
+                            if st.button("Cancel Delete"):
+                                st.session_state.confirm_batch_delete = False
+                                st.rerun()
 
         # --- Rendering Helper ---
         def render_grid(items):
@@ -288,7 +386,25 @@ if os.path.exists(OUTPUT_DIR):
                     with cols[idx]:
                         st.image(item['path'], caption=item['filename'], width='stretch')
                         base_name = os.path.splitext(item['filename'])[0]
-                        st.checkbox("Approve", key=f"approve_{base_name}", on_change=save_approvals)
+                        
+                        # Controls
+                        c1, c2 = st.columns([1, 3])
+                        with c1:
+                            # Selection Checkbox
+                            st.checkbox("Sel", 
+                                key=f"select_{item['filename']}", 
+                                value=item['filename'] in st.session_state.selected_files,
+                                on_change=toggle_selection,
+                                args=(item['filename'],)
+                            )
+                        with c2:
+                            # Approve Checkbox
+                            st.checkbox("Approve", 
+                                key=f"approve_{base_name}", 
+                                value=base_name in st.session_state.approved_files,
+                                on_change=toggle_approval,
+                                args=(base_name,)
+                            )
                         
                         with st.popover("View Metadata"):
                             # Extract Image Metadata (Seed & Prompt)

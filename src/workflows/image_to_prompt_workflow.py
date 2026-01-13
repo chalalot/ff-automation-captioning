@@ -132,13 +132,18 @@ class ImageToPromptWorkflow:
         
         # Determine Persona Type and Template Directory
         persona_type = persona_config.get("type", "instagirl")
-        template_dir = os.path.join(os.path.dirname(__file__), 'templates', persona_type)
+        
+        # Get project root assuming structure src/workflows/this_file.py
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        prompts_base = os.path.join(project_root, 'prompts', 'templates')
+        
+        template_dir = os.path.join(prompts_base, persona_type)
         
         # Fallback to instagirl if type folder doesn't exist (though it should)
         if not os.path.exists(template_dir):
             if self.verbose:
                 print(f"Warning: Template directory for type '{persona_type}' not found at {template_dir}. Falling back to 'instagirl'.")
-            template_dir = os.path.join(os.path.dirname(__file__), 'templates', 'instagirl')
+            template_dir = os.path.join(prompts_base, 'instagirl')
 
         # Initialize Agents with specific templates
         analyst = self._create_analyst(template_dir)

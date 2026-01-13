@@ -18,7 +18,11 @@ class VideoStoryboardWorkflow:
 
     def _create_analyst(self) -> Agent:
         # Load backstory
-        backstory_path = os.path.join(os.path.dirname(__file__), 'video_analyst_agent.txt')
+        # Get project root assuming structure src/workflows/this_file.py
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        prompts_dir = os.path.join(project_root, 'prompts', 'workflows')
+        
+        backstory_path = os.path.join(prompts_dir, 'video_analyst_agent.txt')
         try:
              with open(backstory_path, 'r', encoding='utf-8') as f:
                  backstory_content = f.read()
@@ -38,7 +42,10 @@ class VideoStoryboardWorkflow:
 
     def _create_concept_ideator(self) -> Agent:
         # Load backstory
-        backstory_path = os.path.join(os.path.dirname(__file__), 'video_concept_agent.txt')
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        prompts_dir = os.path.join(project_root, 'prompts', 'workflows')
+        
+        backstory_path = os.path.join(prompts_dir, 'video_concept_agent.txt')
         try:
              with open(backstory_path, 'r', encoding='utf-8') as f:
                  backstory_content = f.read()
@@ -57,7 +64,10 @@ class VideoStoryboardWorkflow:
 
     def _create_prompt_generator(self) -> Agent:
         # Load backstory
-        backstory_path = os.path.join(os.path.dirname(__file__), 'video_prompt_agent.txt')
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        prompts_dir = os.path.join(project_root, 'prompts', 'workflows')
+
+        backstory_path = os.path.join(prompts_dir, 'video_prompt_agent.txt')
         try:
              with open(backstory_path, 'r', encoding='utf-8') as f:
                  backstory_content = f.read()
@@ -88,7 +98,10 @@ class VideoStoryboardWorkflow:
         print(f"\n🎬 Starting Video Variations Workflow for: {image_path} (Persona: {persona_name})")
 
         # Task 1: Analyze Frame 0
-        analyst_task_path = os.path.join(os.path.dirname(__file__), 'video_analyst_task.txt')
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        prompts_dir = os.path.join(project_root, 'prompts', 'workflows')
+        
+        analyst_task_path = os.path.join(prompts_dir, 'video_analyst_task.txt')
         try:
              with open(analyst_task_path, 'r', encoding='utf-8') as f:
                  analyst_task_template = f.read()
@@ -104,7 +117,10 @@ class VideoStoryboardWorkflow:
         )
 
         # Task 2: Create Concepts
-        concept_task_path = os.path.join(os.path.dirname(__file__), 'video_concept_task.txt')
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        prompts_dir = os.path.join(project_root, 'prompts', 'workflows')
+
+        concept_task_path = os.path.join(prompts_dir, 'video_concept_task.txt')
         try:
              with open(concept_task_path, 'r', encoding='utf-8') as f:
                  concept_task_desc = f.read()
@@ -119,7 +135,10 @@ class VideoStoryboardWorkflow:
         )
 
         # Task 3: Generate Prompts
-        prompt_task_path = os.path.join(os.path.dirname(__file__), 'video_prompt_task.txt')
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        prompts_dir = os.path.join(project_root, 'prompts', 'workflows')
+
+        prompt_task_path = os.path.join(prompts_dir, 'video_prompt_task.txt')
         try:
              with open(prompt_task_path, 'r', encoding='utf-8') as f:
                  prompt_task_desc = f.read()
