@@ -86,6 +86,10 @@ async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callb
             # Notify progress if callback provided
             if progress_callback:
                 try:
+                    # Pass the current filename to the callback
+                    progress_callback(src_image_path.name)
+                except TypeError:
+                    # Fallback for callbacks that don't accept arguments
                     progress_callback()
                 except Exception as cb_err:
                     logger.warning(f"Progress callback failed: {cb_err}")

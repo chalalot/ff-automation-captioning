@@ -903,6 +903,22 @@ class ComfyUIClient:
             logger.error(f"Failed to check status for {execution_id}: {e}")
             raise
 
+    async def get_queue(self) -> Dict[str, Any]:
+        """
+        Fetch current queue status from ComfyUI.
+        Endpoint: GET /queue
+        """
+        try:
+            # Note: We use _make_request which handles base URL and logging
+            response = await self._make_request(
+                "GET",
+                "/queue"
+            )
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to fetch queue status: {e}")
+            return {"error": str(e), "queue_running": [], "queue_pending": []}
+
     async def get_execution_details(self, execution_id: str) -> Dict[str, Any]:
         """
         Fetch full execution history/metadata from ComfyUI.

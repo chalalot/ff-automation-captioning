@@ -6,6 +6,7 @@ import pandas as pd
 import re
 import contextlib
 import json
+import math
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -275,20 +276,88 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
                     if 'logger' in locals():
                         logger.write(f"\nERROR: {e}")
 
-# --- 1. Workflow Mode ---
-st.header("1. Input Configuration")
+from src.third_parties.comfyui_client import ComfyUIClient
 
+# --- 1. Input Configuration (Sorted Images) ---
+st.header("1. Input Configuration & Management")
 st.info(f"Monitoring Input Directory: `{INPUT_DIR}`")
 
-# Live Count Display
+# Helper to count files
 def count_files_in_input():
     if os.path.exists(INPUT_DIR):
         valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
         return len([f for f in os.listdir(INPUT_DIR) if f.lower().endswith(valid_exts) and os.path.isfile(os.path.join(INPUT_DIR, f))])
     return 0
 
+# Metric
 input_count_placeholder = st.empty()
 input_count_placeholder.metric("Images Remaining in Sorted Folder", count_files_in_input())
+
+# -- Sorted Images Panel --
+valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
+all_files = []
+if os.path.exists(INPUT_DIR):
+    all_files = [f for f in os.listdir(INPUT_DIR) if f.lower().endswith(valid_exts) and os.path.isfile(os.path.join(INPUT_DIR, f))]
+    all_files.sort()
+
+with st.expander("📂 Manage Sorted Images", expanded=True):
+    if not all_files:
+        st.write("No images in Sorted folder.")
+    else:
+        # Pagination
+        items_per_page = 12
+        total_pages = math.ceil(len(all_files) / items_per_page)
+        
+        if "sorted_page" not in st.session_state:
+            st.session_state.sorted_page = 1
+            
+        col_pag1, col_pag2, col_pag3 = st.columns([1, 2, 1])
+        with col_pag1:
+            if st.button("Previous", disabled=st.session_state.sorted_page <= 1):
+                st.session_state.sorted_page -= 1
+                st.rerun()
+        with col_pag2:
+            st.markdown(f"**Page {st.session_state.sorted_page} of {total_pages}** ({len(all_files)} images)")
+        with col_pag3:
+            if st.button("Next", disabled=st.session_state.sorted_page >= total_pages):
+                st.session_state.sorted_page += 1
+                st.rerun()
+                
+        # Slice files
+        start_idx = (st.session_state.sorted_page - 1) * items_per_page
+        end_idx = start_idx + items_per_page
+        current_batch = all_files[start_idx:end_idx]
+        
+        # Grid Display with Selection
+        # We use a form to handle selection
+        with st.form("sorted_images_form"):
+            # Create a 4-column grid
+            cols = st.columns(4)
+            selected_images = []
+            
+            # Since st.image loads the image, for large folders this is okay because we paginate
+            for i, filename in enumerate(current_batch):
+                col = cols[i % 4]
+                file_path = os.path.join(INPUT_DIR, filename)
+                with col:
+                    st.image(file_path, use_container_width=True)
+                    if st.checkbox(f"Select {filename}", key=f"sel_{filename}"):
+                        selected_images.append(filename)
+            
+            st.markdown("---")
+            if st.form_submit_button("🗑️ Delete Selected"):
+                if selected_images:
+                    count = 0
+                    for img_name in selected_images:
+                        try:
+                            os.remove(os.path.join(INPUT_DIR, img_name))
+                            count += 1
+                        except Exception as e:
+                            st.error(f"Failed to delete {img_name}: {e}")
+                    st.success(f"Deleted {count} images.")
+                    st.rerun()
+                else:
+                    st.warning("No images selected.")
 
 # Optional Upload Logic
 with st.expander("Upload Images to Input Directory (Optional)"):
@@ -302,10 +371,47 @@ with st.expander("Upload Images to Input Directory (Optional)"):
             st.success(f"Saved {len(uploaded_files)} images to {INPUT_DIR}.")
             # Update count immediately after upload
             input_count_placeholder.metric("Images Remaining in Sorted Folder", count_files_in_input())
+            st.rerun()
 
-# --- Queue Status Section ---
-with st.expander("📊 Queue Status (Recent Executions)", expanded=False):
-    recent_executions = storage.get_recent_executions(limit=20)
+# --- Queue & Status Section ---
+st.header("📊 System Status")
+
+col_q1, col_q2 = st.columns(2)
+
+with col_q1:
+    st.subheader("ComfyUI Queue")
+    # Fetch queue
+    try:
+        client = ComfyUIClient() # Initialize client
+        queue_data = asyncio.run(client.get_queue())
+        
+        running = queue_data.get("queue_running", [])
+        pending = queue_data.get("queue_pending", [])
+        
+        st.metric("Running Jobs", len(running))
+        st.metric("Pending Jobs", len(pending))
+        
+        if running:
+            st.markdown("#### 🏃 Running")
+            for job in running:
+                # job usually is [prompt_id, prompt_dict, extra_info_dict]
+                job_id = job[0] if isinstance(job, list) and len(job)>0 else "Unknown"
+                st.code(f"Job ID: {job_id}")
+                
+        if pending:
+            st.markdown("#### ⏳ Pending (Next 5)")
+            for i, job in enumerate(pending[:5]):
+                job_id = job[0] if isinstance(job, list) and len(job)>0 else "Unknown"
+                st.text(f"{i+1}. Job ID: {job_id}")
+            if len(pending) > 5:
+                st.caption(f"... and {len(pending)-5} more")
+                
+    except Exception as e:
+        st.error(f"Failed to fetch ComfyUI queue: {e}")
+
+with col_q2:
+    st.subheader("Recent Executions (DB)")
+    recent_executions = storage.get_recent_executions(limit=10)
     if recent_executions:
         # Convert to DataFrame for cleaner display
         df = pd.DataFrame(recent_executions)
@@ -314,7 +420,7 @@ with st.expander("📊 Queue Status (Recent Executions)", expanded=False):
         if 'image_ref_path' in df.columns:
             cols_to_show.append('image_ref_path')
         
-        st.dataframe(df[cols_to_show], width='stretch')
+        st.dataframe(df[cols_to_show], width='stretch', height=300)
         
         if st.button("Refresh Status"):
             st.rerun()
@@ -330,12 +436,22 @@ with col1:
     st.subheader("Step 1: Process & Queue")
     st.markdown(f"Consumes images from `{INPUT_DIR}`, generates prompts, and queues them.")
     
+    # Status placeholder for active processing feedback
+    process_status_placeholder = st.empty()
+    
     if st.button("Start Processing & Queueing", type="primary"):
         with st.spinner(f"Processing batch of {limit_choice} images..."):
             try:
                 # Callback to update the metric live during processing
-                def on_progress():
-                    input_count_placeholder.metric("Images Remaining in Sorted Folder", count_files_in_input())
+                # Now accepts an optional filename argument from scripts/process_and_queue.py
+                def on_progress(filename=None):
+                    count = count_files_in_input() # update count
+                    input_count_placeholder.metric("Images Remaining in Sorted Folder", count)
+                    
+                    if filename:
+                        process_status_placeholder.info(f"🔄 **Processing:** `{filename}` ...")
+                    else:
+                        process_status_placeholder.info("🔄 Processing next image...")
 
                 asyncio.run(run_process_script(
                     persona=kol_persona, 
@@ -346,6 +462,7 @@ with col1:
                     seed_strategy=seed_strategy,
                     base_seed=base_seed
                 ))
+                process_status_placeholder.success("Batch processing complete!")
                 st.success("Batch processing complete! Check logs for details.")
                 st.rerun() # Refresh status
             except Exception as e:
