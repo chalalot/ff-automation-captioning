@@ -1,8 +1,8 @@
 import shutil
 import os
 
-src_dir = "src/workflows/templates/instagirl"
-dst_dir = "src/workflows/templates/dancer"
+src_dir = "prompts/templates/instagirl"
+dst_dir = "prompts/templates/dancer"
 
 if not os.path.exists(dst_dir):
     os.makedirs(dst_dir)

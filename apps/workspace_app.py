@@ -116,7 +116,7 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
     col_edit, col_test = st.columns([1.5, 1])
     
     # Paths - Dynamic based on selected type
-    base_workflow_dir = os.path.join(os.path.dirname(__file__), '..', 'src', 'workflows', 'templates', selected_type_for_editor)
+    base_workflow_dir = os.path.join(os.path.dirname(__file__), '..', 'prompts', 'templates', selected_type_for_editor)
     
     # Ensure directory exists (create if new type added manually but folder missing)
     if not os.path.exists(base_workflow_dir):
