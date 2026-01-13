@@ -481,7 +481,9 @@ if client_available:
                                 try:
                                     # Use ComfyUIClient's request method or add headers manually
                                     # Since video_url is complete, we use requests with headers if api_key exists
-                                    headers = {}
+                                    headers = {
+                                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                                    }
                                     if comfy_client.api_key:
                                         headers["Authorization"] = f"Bearer {comfy_client.api_key}"
                                     
@@ -492,8 +494,20 @@ if client_available:
                                             f.write(resp.content)
                                     else:
                                         st.error(f"Failed to download {task_id}: HTTP {resp.status_code}")
+                                        # Enhanced Debugging
+                                        with st.expander(f"Debug Info for {task_id[-4:]}", expanded=False):
+                                            st.write(f"**URL:** `{video_url}`")
+                                            st.write(f"**API Key Present:** {bool(comfy_client.api_key)}")
+                                            st.write("**Headers Sent:**")
+                                            st.json(headers)
+                                            st.write("**Response Headers:**")
+                                            st.json(dict(resp.headers))
+                                            st.write(f"**Response Content:** `{resp.text[:200]}`")
+
                                 except Exception as e:
                                     st.error(f"Download error for {task_id}: {e}")
+                                    import traceback
+                                    st.code(traceback.format_exc())
                                         
                             if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
                                 completed_videos.append(local_path)

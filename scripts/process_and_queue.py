@@ -20,7 +20,7 @@ from utils.constants import DEFAULT_NEGATIVE_PROMPT
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("ProcessAndQueue")
 
-async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callback=None):
+async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callback=None, strength_model=None, seed_strategy="random", base_seed=0):
     """
     Main processing loop:
     1. Scans INPUT_DIR for images.
@@ -105,7 +105,10 @@ async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callb
                 positive_prompt=prompt_content,
                 negative_prompt=DEFAULT_NEGATIVE_PROMPT,
                 kol_persona=persona,
-                workflow_type=workflow_type
+                workflow_type=workflow_type,
+                strength_model=strength_model,
+                seed_strategy=seed_strategy,
+                base_seed=base_seed
             )
             
             if execution_id:
@@ -140,6 +143,9 @@ if __name__ == "__main__":
     parser.add_argument("--persona", default="Jennie", help="Persona name")
     parser.add_argument("--workflow", default="turbo", help="Workflow type (turbo/wan2.2)")
     parser.add_argument("--limit", type=int, default=10, help="Max images to process in one run")
+    parser.add_argument("--strength_model", default=None, help="Strength of the LoRA model")
+    parser.add_argument("--seed_strategy", default="random", help="Seed strategy (random/fixed)")
+    parser.add_argument("--base_seed", type=int, default=0, help="Base seed for fixed strategy")
     args = parser.parse_args()
     
-    asyncio.run(main(persona=args.persona, workflow_type=args.workflow, limit=args.limit))
+    asyncio.run(main(persona=args.persona, workflow_type=args.workflow, limit=args.limit, strength_model=args.strength_model, seed_strategy=args.seed_strategy, base_seed=args.base_seed))

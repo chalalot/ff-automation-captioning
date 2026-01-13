@@ -577,7 +577,10 @@ class ComfyUIClient:
         workflow_name: Optional[str] = None,
         lora_name: Optional[str] = None,
         kol_persona: Optional[str] = None,
-        input_image_path: Optional[str] = None
+        input_image_path: Optional[str] = None,
+        strength_model: Optional[str] = None,
+        seed_strategy: str = "random",
+        base_seed: int = 0
     ) -> str:
         """
         Start image generation using the new executions endpoint with workflow ID.
@@ -590,6 +593,9 @@ class ComfyUIClient:
             lora_name: LoRA model name to use (deprecated, uses persona mapping)
             kol_persona: KOL persona name for automatic lora mapping
             input_image_path: Path to local input image (required for nano_banana)
+            strength_model: Strength of the LoRA model (optional, for Turbo workflow)
+            seed_strategy: Strategy for seed generation ("random" or "fixed")
+            base_seed: Base seed value if strategy is "fixed"
 
         Returns:
             execution_id: ID to track generation progress
@@ -607,8 +613,8 @@ class ComfyUIClient:
             "workflow_id": workflow_id,
             "prompt_count": 1,
             "seed_config": {
-                "strategy": "random",
-                "base_seed": 0,
+                "strategy": seed_strategy,
+                "base_seed": base_seed,
                 "step": 1
             }
         }
@@ -689,11 +695,16 @@ class ComfyUIClient:
                 "persona_lora_name": {
                     "field": "53.inputs.lora_name",
                     "dtype": "str"
+                },
+                "persona_lora_strength_model": {
+                    "field": "53.inputs.strength_model",
+                    "dtype": "str"
                 }
             }
             payload["input_overrides"] = {
                 "positive_prompt": cleaned_prompt,
-                "persona_lora_name": ""
+                "persona_lora_name": "",
+                "persona_lora_strength_model": str(strength_model) if strength_model is not None else "1.0"
             }
 
             if kol_persona:

@@ -46,6 +46,13 @@ if not available_personas:
 kol_persona = st.sidebar.selectbox("KOL Persona", available_personas)
 workflow_choice = st.sidebar.selectbox("Workflow Type", ["Turbo", "WAN2.2"])
 limit_choice = st.sidebar.number_input("Batch Limit", min_value=1, max_value=1000, value=10)
+strength_model = st.sidebar.slider("Model Strength", min_value=0.0, max_value=2.0, value=0.8, step=0.1)
+
+# Seed Configuration
+seed_strategy = st.sidebar.selectbox("Seed Strategy", ["random", "fixed"], index=0)
+base_seed = 0
+if seed_strategy == "fixed":
+    base_seed = st.sidebar.number_input("Base Seed", min_value=0, value=0, step=1)
 
 # Constants from Config
 INPUT_DIR = GlobalConfig.INPUT_DIR
@@ -334,7 +341,10 @@ with col1:
                     persona=kol_persona, 
                     workflow_type=workflow_choice.lower(),
                     limit=limit_choice,
-                    progress_callback=on_progress
+                    progress_callback=on_progress,
+                    strength_model=str(strength_model),
+                    seed_strategy=seed_strategy,
+                    base_seed=base_seed
                 ))
                 st.success("Batch processing complete! Check logs for details.")
                 st.rerun() # Refresh status
