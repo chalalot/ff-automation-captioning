@@ -10,7 +10,7 @@ services:
       - ../Sorted:/app/Sorted
       - ../processed:/app/processed
       - ../results:/app/results
-      - ./prompts:/app/prompts
+      - ../prompts:/app/prompts
       - ../image_logs.db:/app/image_logs.db
       - ../.env:/app/.env
     env_file:
@@ -25,7 +25,7 @@ services:
       - ../Sorted:/app/Sorted
       - ../processed:/app/processed
       - ../results:/app/results
-      - ./prompts:/app/prompts
+      - ../prompts:/app/prompts
       - ../image_logs.db:/app/image_logs.db
       - ../.env:/app/.env
     env_file:
@@ -40,7 +40,7 @@ services:
       - ../Sorted:/app/Sorted
       - ../processed:/app/processed
       - ../results:/app/results
-      - ./prompts:/app/prompts
+      - ../prompts:/app/prompts
       - ../image_logs.db:/app/image_logs.db
       - ../.env:/app/.env
     env_file:
