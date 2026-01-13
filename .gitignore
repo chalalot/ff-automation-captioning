@@ -5,3 +5,4 @@ __pycache__/
 image_logs.db
 .env
 soulie-gcp-bucket.json
+prompts/
