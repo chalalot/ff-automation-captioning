@@ -908,13 +908,21 @@ class ComfyUIClient:
         Fetch current queue status from ComfyUI.
         Endpoint: GET /queue
         """
+        url = f"{self.api_url}/queue"
         try:
-            # Note: We use _make_request which handles base URL and logging
-            response = await self._make_request(
-                "GET",
-                "/queue"
-            )
-            return response.json()
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                headers = {}
+                if self.api_key:
+                    headers["Authorization"] = f"Bearer {self.api_key}"
+                
+                response = await client.get(url, headers=headers)
+                
+                if response.status_code == 404:
+                    # Silently handle missing endpoint (common with some providers)
+                    return {"queue_running": [], "queue_pending": []}
+                
+                response.raise_for_status()
+                return response.json()
         except Exception as e:
             logger.error(f"Failed to fetch queue status: {e}")
             return {"error": str(e), "queue_running": [], "queue_pending": []}

@@ -19,6 +19,9 @@ class VisionTool(BaseTool):
     args_schema: Type[BaseModel] = VisionToolInput
 
     def _run(self, image_path: str, prompt: str) -> str:
+        # Clean path of potential quotes from LLM
+        image_path = image_path.strip().strip("'").strip('"')
+
         print(f"\n[VisionTool] DEBUG: Called with path={image_path}")
         client = OpenAI() # Assumes OPENAI_API_KEY is set in environment
 

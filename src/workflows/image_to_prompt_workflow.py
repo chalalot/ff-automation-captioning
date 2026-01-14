@@ -176,7 +176,8 @@ class ImageToPromptWorkflow:
         # Format the task description with image path
         # Normalize path for LLM consumption (use forward slashes even on Windows)
         safe_image_path = Path(image_path).resolve().as_posix()
-        analyst_task_desc = analyst_task_template.format(image_path=safe_image_path)
+        # Force quotes around path to ensure LLM treats it as a single unit (handles spaces)
+        analyst_task_desc = analyst_task_template.format(image_path=f'"{safe_image_path}"')
 
         analyze_task = Task(
             description=analyst_task_desc,

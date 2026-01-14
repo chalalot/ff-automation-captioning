@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Dict, List, Any
 from crewai import Agent, Task, Crew, Process
 from src.tools.vision_tool import VisionTool
@@ -108,7 +109,8 @@ class VideoStoryboardWorkflow:
         except:
              analyst_task_template = "Analyze the source image at: {image_path}..." # Fallback
 
-        analyst_task_desc = analyst_task_template.format(image_path=image_path)
+        safe_image_path = Path(image_path).resolve().as_posix()
+        analyst_task_desc = analyst_task_template.format(image_path=f'"{safe_image_path}"')
 
         analyze_task = Task(
             description=analyst_task_desc,
