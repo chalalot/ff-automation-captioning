@@ -1,5 +1,6 @@
 import os
 import asyncio
+from pathlib import Path
 from dotenv import load_dotenv
 from typing import List, Optional, Dict, Any
 from crewai import Agent, Task, Crew, Process
@@ -173,7 +174,9 @@ class ImageToPromptWorkflow:
                 print(f"Warning: Could not load analyst_task.txt from {analyst_task_path}, using fallback. Error: {e}")
         
         # Format the task description with image path
-        analyst_task_desc = analyst_task_template.format(image_path=image_path)
+        # Normalize path for LLM consumption (use forward slashes even on Windows)
+        safe_image_path = Path(image_path).resolve().as_posix()
+        analyst_task_desc = analyst_task_template.format(image_path=safe_image_path)
 
         analyze_task = Task(
             description=analyst_task_desc,

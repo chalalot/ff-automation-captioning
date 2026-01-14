@@ -4,62 +4,109 @@ from typing import List, Dict, Any, Optional
 
 class WorkflowConfigManager:
     """
-    Manages loading and saving persona configuration and types.
+    Manages loading and saving persona configuration and types using text files in prompts directory.
     """
     
-    CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'persona_config.json')
-    
     def __init__(self):
-        self.config = self.load_config()
-
-    def load_config(self) -> Dict[str, Any]:
-        """Loads the persona configuration from JSON file."""
-        if not os.path.exists(self.CONFIG_PATH):
-            return {"personas": {}, "persona_types": []}
+        # Determine paths relative to this file
+        # src/workflows/config_manager.py -> ../../prompts
+        self.PROMPTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'prompts'))
+        self.PERSONAS_DIR = os.path.join(self.PROMPTS_DIR, 'personas')
+        self.TYPES_FILE = os.path.join(self.PROMPTS_DIR, 'persona_types.txt')
         
-        try:
-            with open(self.CONFIG_PATH, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"Error loading config: {e}")
-            return {"personas": {}, "persona_types": []}
-
-    def save_config(self):
-        """Saves the current configuration to the JSON file."""
-        try:
-            with open(self.CONFIG_PATH, 'w', encoding='utf-8') as f:
-                json.dump(self.config, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"Error saving config: {e}")
+        # Ensure directories exist
+        os.makedirs(self.PERSONAS_DIR, exist_ok=True)
+        if not os.path.exists(self.TYPES_FILE):
+             # Default types if not exists
+             with open(self.TYPES_FILE, 'w', encoding='utf-8') as f:
+                 f.write("instagirl\ngymer\ndancer")
 
     def get_personas(self) -> List[str]:
-        """Returns list of persona names."""
-        return list(self.config.get("personas", {}).keys())
+        """Returns list of persona names based on directories."""
+        if not os.path.exists(self.PERSONAS_DIR):
+            return []
+        
+        personas = []
+        for item in os.listdir(self.PERSONAS_DIR):
+            if os.path.isdir(os.path.join(self.PERSONAS_DIR, item)):
+                personas.append(item)
+        return sorted(personas)
     
     def get_persona_types(self) -> List[str]:
-        """Returns list of available persona types."""
-        return self.config.get("persona_types", ["instagirl"])
+        """Returns list of available persona types from text file."""
+        if not os.path.exists(self.TYPES_FILE):
+            return ["instagirl"] # Fallback
+            
+        try:
+            with open(self.TYPES_FILE, 'r', encoding='utf-8') as f:
+                return [line.strip() for line in f.readlines() if line.strip()]
+        except Exception as e:
+            print(f"Error loading persona types: {e}")
+            return ["instagirl"]
 
     def get_persona_config(self, name: str) -> Dict[str, Any]:
-        """Returns configuration for a specific persona."""
-        return self.config.get("personas", {}).get(name, {})
+        """Returns configuration for a specific persona by reading its text files."""
+        persona_dir = os.path.join(self.PERSONAS_DIR, name)
+        if not os.path.exists(persona_dir):
+            return {}
+            
+        config = {}
+        
+        # Read Type
+        try:
+            with open(os.path.join(persona_dir, 'type.txt'), 'r', encoding='utf-8') as f:
+                config['type'] = f.read().strip()
+        except:
+            config['type'] = 'instagirl' # Default
+            
+        # Read Hair Color
+        try:
+            with open(os.path.join(persona_dir, 'hair_color.txt'), 'r', encoding='utf-8') as f:
+                config['hair_color'] = f.read().strip()
+        except:
+            config['hair_color'] = ''
+            
+        # Read Hairstyles
+        try:
+            with open(os.path.join(persona_dir, 'hairstyles.txt'), 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                config['hairstyles'] = [line.strip() for line in lines if line.strip()]
+        except:
+            config['hairstyles'] = []
+            
+        return config
 
     def update_persona_config(self, name: str, data: Dict[str, Any]):
-        """Updates configuration for a specific persona."""
-        if "personas" not in self.config:
-            self.config["personas"] = {}
+        """Updates configuration for a specific persona by writing to text files."""
+        persona_dir = os.path.join(self.PERSONAS_DIR, name)
+        os.makedirs(persona_dir, exist_ok=True)
         
-        # Merge existing with new
-        existing = self.config["personas"].get(name, {})
-        existing.update(data)
-        self.config["personas"][name] = existing
-        self.save_config()
+        # Update Type
+        if 'type' in data:
+            with open(os.path.join(persona_dir, 'type.txt'), 'w', encoding='utf-8') as f:
+                f.write(str(data['type']))
+                
+        # Update Hair Color
+        if 'hair_color' in data:
+            with open(os.path.join(persona_dir, 'hair_color.txt'), 'w', encoding='utf-8') as f:
+                f.write(str(data['hair_color']))
+                
+        # Update Hairstyles
+        if 'hairstyles' in data:
+            hairstyles = data['hairstyles']
+            if isinstance(hairstyles, list):
+                content = "\n".join(hairstyles)
+                with open(os.path.join(persona_dir, 'hairstyles.txt'), 'w', encoding='utf-8') as f:
+                    f.write(content)
 
     def add_persona_type(self, type_name: str):
         """Adds a new persona type if it doesn't exist."""
-        if "persona_types" not in self.config:
-            self.config["persona_types"] = []
+        current_types = self.get_persona_types()
             
-        if type_name not in self.config["persona_types"]:
-            self.config["persona_types"].append(type_name)
-            self.save_config()
+        if type_name not in current_types:
+            current_types.append(type_name)
+            try:
+                with open(self.TYPES_FILE, 'w', encoding='utf-8') as f:
+                    f.write("\n".join(current_types))
+            except Exception as e:
+                print(f"Error saving persona types: {e}")

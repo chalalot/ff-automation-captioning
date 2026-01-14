@@ -64,17 +64,38 @@ def load_gallery_data(output_dir):
         record = execution_map.get(f)
         persona = record['persona'] if record and 'persona' in record and record['persona'] else "Unknown"
         
+        # Pre-calculate Reference Image Path (Heavy I/O)
+        final_ref_path = None
+        if record:
+            ref_path = record.get('image_ref_path')
+            if ref_path:
+                if os.path.exists(ref_path):
+                    final_ref_path = ref_path
+                else:
+                    # Fix Windows paths when running in Linux container
+                    fixed_path = ref_path.replace('\\', '/')
+                    if os.path.exists(fixed_path):
+                        final_ref_path = fixed_path
+                    else:
+                        # Fallback: Check if file exists in PROCESSED_DIR by filename
+                        filename = os.path.basename(fixed_path)
+                        fallback = os.path.join(GlobalConfig.PROCESSED_DIR, filename)
+                        if os.path.exists(fallback):
+                            final_ref_path = fallback
+
         items.append({
             "filename": f,
             "path": full_path,
             "mtime": mtime,
             "date": date_str,
             "persona": persona,
-            "record": record
+            "record": record,
+            "ref_path": final_ref_path
         })
     return items
 
-def extract_metadata_from_image(file_path):
+@st.cache_data(show_spinner=False)
+def extract_metadata_from_image(file_path, mtime=None):
     """
     Extracts seed and prompt from ComfyUI image metadata.
     Returns a dict with seed, prompt, and raw_metadata.
@@ -155,6 +176,231 @@ def toggle_selection(filename):
         st.session_state.selected_files.remove(filename)
     else:
         st.session_state.selected_files.add(filename)
+
+# --- Fragment for Gallery View ---
+@st.fragment
+def view_gallery_fragment(filtered_items, group_by_date):
+    """
+    Renders the gallery grid, pagination, and batch actions in a fragment.
+    Updates here will not cause a full page reload.
+    """
+    
+    # --- Pagination ---
+    total_items = len(filtered_items)
+    paginated_items = []
+
+    if total_items > 0:
+        col_p1, col_p2, col_p3 = st.columns([1, 2, 2])
+        with col_p1:
+            items_per_page = st.selectbox("Images per page", [20, 50, 100, 200], index=1)
+        
+        total_pages = math.ceil(total_items / items_per_page)
+        
+        if "gallery_page" not in st.session_state:
+            st.session_state.gallery_page = 1
+            
+        # Ensure valid page
+        if st.session_state.gallery_page > total_pages:
+            st.session_state.gallery_page = total_pages
+        if st.session_state.gallery_page < 1:
+            st.session_state.gallery_page = 1
+            
+        with col_p2:
+            st.session_state.gallery_page = st.number_input(
+                f"Page (Total: {total_pages})", 
+                min_value=1, 
+                max_value=total_pages, 
+                value=st.session_state.gallery_page
+            )
+        
+        with col_p3:
+            st.caption(f"Total Images: {total_items}")
+
+        start_idx = (st.session_state.gallery_page - 1) * items_per_page
+        end_idx = start_idx + items_per_page
+        
+        paginated_items = filtered_items[start_idx:end_idx]
+        
+        st.caption(f"Showing images {start_idx + 1}-{min(end_idx, total_items)} of {total_items}")
+    else:
+        paginated_items = []
+        st.info("No matching images found.")
+
+    # --- Batch Actions ---
+    selected_files = st.session_state.selected_files
+    
+    # Filter valid files from selection (in case files were deleted but still in session)
+    valid_selected = [f for f in selected_files if os.path.exists(os.path.join(OUTPUT_DIR, f))]
+    
+    if valid_selected:
+        st.info(f"Selected {len(valid_selected)} images.")
+        
+        with st.container():
+            col_b1, col_b2, col_b3 = st.columns([2, 2, 4])
+            
+            with col_b1:
+                include_txt = st.toggle("Include Metadata (.txt)", value=True)
+                if st.button("Download Selected"):
+                    with st.spinner("Preparing ZIP..."):
+                        # Helper to fetch prompts
+                        async def fetch_prompts_map(files):
+                            results = {}
+                            async def fetch_single(f_path):
+                                try:
+                                    record = storage.get_execution_by_result_path(str(f_path))
+                                    if not record or not record.get('execution_id'): return None
+                                    ex_id = record['execution_id']
+                                    details = await client.get_execution_details(ex_id)
+                                    prompt_content = details.get('prompt')
+                                    if prompt_content is None:
+                                        if 'input_overrides' in details and 'positive_prompt' in details['input_overrides']:
+                                            prompt_content = details['input_overrides']['positive_prompt']
+                                        elif 'prompt' in record:
+                                            prompt_content = record['prompt']
+                                    return prompt_content
+                                except Exception:
+                                    if record and 'prompt' in record: return record['prompt']
+                                    return None
+
+                            full_paths = [os.path.join(OUTPUT_DIR, f) for f in files]
+                            tasks = [fetch_single(fp) for fp in full_paths]
+                            fetched_prompts = await asyncio.gather(*tasks)
+                            
+                            for fname, p_content in zip(files, fetched_prompts):
+                                if p_content: results[fname] = p_content
+                            return results
+
+                        prompts_map = {}
+                        if include_txt:
+                            prompts_map = asyncio.run(fetch_prompts_map(valid_selected))
+
+                        zip_buffer = io.BytesIO()
+                        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                            for fname in valid_selected:
+                                full_path = os.path.join(OUTPUT_DIR, fname)
+                                zf.write(full_path, arcname=fname)
+                                
+                                if include_txt and fname in prompts_map:
+                                    base_name = os.path.splitext(fname)[0]
+                                    txt_filename = f"{base_name}.txt"
+                                    content = prompts_map[fname]
+                                    txt_content = json.dumps(content, indent=2) if isinstance(content, (dict, list)) else str(content)
+                                    zf.writestr(txt_filename, txt_content)
+                        
+                        st.session_state['batch_zip_buffer'] = zip_buffer.getvalue()
+                        st.success("Ready for download!")
+                
+                if 'batch_zip_buffer' in st.session_state and st.session_state.get('batch_zip_buffer'):
+                    st.download_button("Download ZIP", st.session_state['batch_zip_buffer'], "selected_images.zip", "application/zip")
+
+            with col_b2:
+                if st.button("Delete Selected", type="primary"):
+                    st.session_state.confirm_batch_delete = True
+                
+                if st.session_state.get("confirm_batch_delete", False):
+                    st.warning(f"Delete {len(valid_selected)} files?")
+                    col_conf1, col_conf2 = st.columns(2)
+                    with col_conf1:
+                        if st.button("Yes, Delete"):
+                            deleted = 0
+                            for fname in valid_selected:
+                                try:
+                                    os.remove(os.path.join(OUTPUT_DIR, fname))
+                                    st.session_state.selected_files.remove(fname)
+                                    deleted += 1
+                                except Exception as e:
+                                    st.error(f"Error deleting {fname}: {e}")
+                            st.success(f"Deleted {deleted} files.")
+                            st.session_state.confirm_batch_delete = False
+                            # We need to trigger a full rerun to refresh the list of files from disk
+                            st.rerun()
+                    with col_conf2:
+                        if st.button("Cancel Delete"):
+                            st.session_state.confirm_batch_delete = False
+                            st.rerun() # Re-render fragment to hide warning
+
+    # --- Rendering Helper ---
+    def render_grid(items):
+        cols_per_row = 4
+        for i in range(0, len(items), cols_per_row):
+            row_items = items[i:i+cols_per_row]
+            cols = st.columns(cols_per_row)
+            for idx, item in enumerate(row_items):
+                with cols[idx]:
+                    st.image(item['path'], caption=item['filename'], width='stretch')
+                    base_name = os.path.splitext(item['filename'])[0]
+                    
+                    # Controls
+                    c1, c2 = st.columns([1, 3])
+                    with c1:
+                        # Selection Checkbox
+                        st.checkbox("Sel", 
+                            key=f"select_{item['filename']}", 
+                            value=item['filename'] in st.session_state.selected_files,
+                            on_change=toggle_selection,
+                            args=(item['filename'],)
+                        )
+                    with c2:
+                        # Approve Checkbox
+                        st.checkbox("Approve", 
+                            key=f"approve_{base_name}", 
+                            value=base_name in st.session_state.approved_files,
+                            on_change=toggle_approval,
+                            args=(base_name,)
+                        )
+                    
+                    with st.popover("View Metadata"):
+                        # Extract Image Metadata (Seed & Prompt)
+                        img_meta = extract_metadata_from_image(item['path'], item['mtime'])
+                        
+                        if img_meta['seed'] is not None:
+                            st.write(f"**Seed:** `{img_meta['seed']}`")
+                        
+                        if img_meta['prompt']:
+                            st.caption("**Prompt:**")
+                            st.text(img_meta['prompt'])
+                        
+                        st.divider()
+
+                        db_record = item['record']
+                        if db_record:
+                            st.write(f"**Persona:** {item['persona']}")
+                            st.write(f"**Execution ID:** `{db_record['execution_id']}`")
+                            st.write(f"**Status:** {db_record['status']}")
+                            
+                            # Use pre-calculated ref_path
+                            ref_path = item.get('ref_path')
+                            if ref_path:
+                                st.image(ref_path, caption="Reference Image", width=200)
+                            
+                            if st.button("Fetch Remote Details", key=f"fetch_{base_name}"):
+                                with st.spinner("Fetching details..."):
+                                    remote = asyncio.run(fetch_remote_metadata(client, db_record['execution_id']))
+                                    if remote: st.json(remote)
+                        else:
+                            st.warning("No database record found.")
+                        
+                        if img_meta['raw_metadata']:
+                            with st.expander("View Full Metadata"):
+                                st.json(img_meta['raw_metadata'])
+
+    # --- Grouping Logic ---
+    if group_by_date:
+        # Group by date string
+        # Note: items are already sorted by time
+        grouped = {}
+        for item in paginated_items:
+            d = item['date']
+            if d not in grouped: grouped[d] = []
+            grouped[d].append(item)
+        
+        # Render groups
+        for date_key in grouped:
+            st.subheader(f"📅 {date_key}")
+            render_grid(grouped[date_key])
+    else:
+        render_grid(paginated_items)
+
 # -------------------------
 
 if st.button("Refresh Gallery"):
@@ -212,8 +458,6 @@ if os.path.exists(OUTPUT_DIR):
                             deleted_count = 0
                             for base in unused_bases:
                                 # Find files starting with this base (to cover extensions)
-                                # Actually we know the extensions from all_files in get_sorted_images
-                                # But let's just look for matching files in directory
                                 for f in os.listdir(OUTPUT_DIR):
                                     if os.path.splitext(f)[0] == base:
                                         try:
@@ -232,247 +476,20 @@ if os.path.exists(OUTPUT_DIR):
                             st.session_state.confirm_delete_unused = False
                             st.rerun()
 
-        # --- Filtering ---
+        # --- Filtering & Sorting ---
         filtered_items = gallery_items
         if selected_personas:
             filtered_items = [item for item in filtered_items if item['persona'] in selected_personas]
         
-        st.write(f"Showing {len(filtered_items)} images.")
-
-        # --- Sorting ---
+        # Sort
         reverse_sort = (sort_order == "Newest First")
         filtered_items.sort(key=lambda x: x['mtime'], reverse=reverse_sort)
-
-        # --- Pagination ---
-        total_items = len(filtered_items)
-        paginated_items = []
-
-        if total_items > 0:
-            col_p1, col_p2, col_p3 = st.columns([1, 2, 2])
-            with col_p1:
-                items_per_page = st.selectbox("Images per page", [20, 50, 100, 200], index=1)
-            
-            total_pages = math.ceil(total_items / items_per_page)
-            
-            if "gallery_page" not in st.session_state:
-                st.session_state.gallery_page = 1
-                
-            # Ensure valid page
-            if st.session_state.gallery_page > total_pages:
-                st.session_state.gallery_page = total_pages
-            if st.session_state.gallery_page < 1:
-                st.session_state.gallery_page = 1
-                
-            with col_p2:
-                st.session_state.gallery_page = st.number_input(
-                    f"Page (Total: {total_pages})", 
-                    min_value=1, 
-                    max_value=total_pages, 
-                    value=st.session_state.gallery_page
-                )
-            
-            with col_p3:
-                st.caption(f"Total Images: {total_items}")
-
-            start_idx = (st.session_state.gallery_page - 1) * items_per_page
-            end_idx = start_idx + items_per_page
-            
-            paginated_items = filtered_items[start_idx:end_idx]
-            
-            st.caption(f"Showing images {start_idx + 1}-{min(end_idx, total_items)} of {total_items}")
-        else:
-            paginated_items = []
-
-        # --- Batch Actions ---
-        selected_files = st.session_state.selected_files
         
-        # Filter valid files from selection (in case files were deleted but still in session)
-        valid_selected = [f for f in selected_files if os.path.exists(os.path.join(OUTPUT_DIR, f))]
+        st.write(f"Showing {len(filtered_items)} images.")
         
-        if valid_selected:
-            st.info(f"Selected {len(valid_selected)} images.")
-            
-            with st.container():
-                col_b1, col_b2, col_b3 = st.columns([2, 2, 4])
-                
-                with col_b1:
-                    include_txt = st.toggle("Include Metadata (.txt)", value=True)
-                    if st.button("Download Selected"):
-                        with st.spinner("Preparing ZIP..."):
-                            # Helper to fetch prompts
-                            async def fetch_prompts_map(files):
-                                results = {}
-                                async def fetch_single(f_path):
-                                    try:
-                                        record = storage.get_execution_by_result_path(str(f_path))
-                                        if not record or not record.get('execution_id'): return None
-                                        ex_id = record['execution_id']
-                                        details = await client.get_execution_details(ex_id)
-                                        prompt_content = details.get('prompt')
-                                        if prompt_content is None:
-                                            if 'input_overrides' in details and 'positive_prompt' in details['input_overrides']:
-                                                prompt_content = details['input_overrides']['positive_prompt']
-                                            elif 'prompt' in record:
-                                                prompt_content = record['prompt']
-                                        return prompt_content
-                                    except Exception:
-                                        if record and 'prompt' in record: return record['prompt']
-                                        return None
-
-                                full_paths = [os.path.join(OUTPUT_DIR, f) for f in files]
-                                tasks = [fetch_single(fp) for fp in full_paths]
-                                fetched_prompts = await asyncio.gather(*tasks)
-                                
-                                for fname, p_content in zip(files, fetched_prompts):
-                                    if p_content: results[fname] = p_content
-                                return results
-
-                            prompts_map = {}
-                            if include_txt:
-                                prompts_map = asyncio.run(fetch_prompts_map(valid_selected))
-
-                            zip_buffer = io.BytesIO()
-                            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                                for fname in valid_selected:
-                                    full_path = os.path.join(OUTPUT_DIR, fname)
-                                    zf.write(full_path, arcname=fname)
-                                    
-                                    if include_txt and fname in prompts_map:
-                                        base_name = os.path.splitext(fname)[0]
-                                        txt_filename = f"{base_name}.txt"
-                                        content = prompts_map[fname]
-                                        txt_content = json.dumps(content, indent=2) if isinstance(content, (dict, list)) else str(content)
-                                        zf.writestr(txt_filename, txt_content)
-                            
-                            st.session_state['batch_zip_buffer'] = zip_buffer.getvalue()
-                            st.success("Ready for download!")
-                    
-                    if 'batch_zip_buffer' in st.session_state and st.session_state.get('batch_zip_buffer'):
-                        st.download_button("Download ZIP", st.session_state['batch_zip_buffer'], "selected_images.zip", "application/zip")
-
-                with col_b2:
-                    if st.button("Delete Selected", type="primary"):
-                        st.session_state.confirm_batch_delete = True
-                    
-                    if st.session_state.get("confirm_batch_delete", False):
-                        st.warning(f"Delete {len(valid_selected)} files?")
-                        col_conf1, col_conf2 = st.columns(2)
-                        with col_conf1:
-                            if st.button("Yes, Delete"):
-                                deleted = 0
-                                for fname in valid_selected:
-                                    try:
-                                        os.remove(os.path.join(OUTPUT_DIR, fname))
-                                        st.session_state.selected_files.remove(fname)
-                                        deleted += 1
-                                    except Exception as e:
-                                        st.error(f"Error deleting {fname}: {e}")
-                                st.success(f"Deleted {deleted} files.")
-                                st.session_state.confirm_batch_delete = False
-                                load_gallery_data.clear()
-                                st.rerun()
-                        with col_conf2:
-                            if st.button("Cancel Delete"):
-                                st.session_state.confirm_batch_delete = False
-                                st.rerun()
-
-        # --- Rendering Helper ---
-        def render_grid(items):
-            cols_per_row = 4
-            for i in range(0, len(items), cols_per_row):
-                row_items = items[i:i+cols_per_row]
-                cols = st.columns(cols_per_row)
-                for idx, item in enumerate(row_items):
-                    with cols[idx]:
-                        st.image(item['path'], caption=item['filename'], width='stretch')
-                        base_name = os.path.splitext(item['filename'])[0]
-                        
-                        # Controls
-                        c1, c2 = st.columns([1, 3])
-                        with c1:
-                            # Selection Checkbox
-                            st.checkbox("Sel", 
-                                key=f"select_{item['filename']}", 
-                                value=item['filename'] in st.session_state.selected_files,
-                                on_change=toggle_selection,
-                                args=(item['filename'],)
-                            )
-                        with c2:
-                            # Approve Checkbox
-                            st.checkbox("Approve", 
-                                key=f"approve_{base_name}", 
-                                value=base_name in st.session_state.approved_files,
-                                on_change=toggle_approval,
-                                args=(base_name,)
-                            )
-                        
-                        with st.popover("View Metadata"):
-                            # Extract Image Metadata (Seed & Prompt)
-                            img_meta = extract_metadata_from_image(item['path'])
-                            
-                            if img_meta['seed'] is not None:
-                                st.write(f"**Seed:** `{img_meta['seed']}`")
-                            
-                            if img_meta['prompt']:
-                                st.caption("**Prompt:**")
-                                st.text(img_meta['prompt'])
-                            
-                            st.divider()
-
-                            db_record = item['record']
-                            if db_record:
-                                st.write(f"**Persona:** {item['persona']}")
-                                st.write(f"**Execution ID:** `{db_record['execution_id']}`")
-                                st.write(f"**Status:** {db_record['status']}")
-                                
-                                ref_path = db_record.get('image_ref_path')
-                                if ref_path:
-                                    final_ref_path = None
-                                    if os.path.exists(ref_path):
-                                        final_ref_path = ref_path
-                                    else:
-                                        # Fix Windows paths when running in Linux container
-                                        fixed_path = ref_path.replace('\\', '/')
-                                        if os.path.exists(fixed_path):
-                                            final_ref_path = fixed_path
-                                        else:
-                                            # Fallback: Check if file exists in PROCESSED_DIR by filename
-                                            # This handles case where absolute path differs but file is in mounted processed dir
-                                            filename = os.path.basename(fixed_path)
-                                            fallback = os.path.join(GlobalConfig.PROCESSED_DIR, filename)
-                                            if os.path.exists(fallback):
-                                                final_ref_path = fallback
-                                    
-                                    if final_ref_path:
-                                        st.image(final_ref_path, caption="Reference Image", width=200)
-                                
-                                if st.button("Fetch Remote Details", key=f"fetch_{base_name}"):
-                                    with st.spinner("Fetching details..."):
-                                        remote = asyncio.run(fetch_remote_metadata(client, db_record['execution_id']))
-                                        if remote: st.json(remote)
-                            else:
-                                st.warning("No database record found.")
-                            
-                            if img_meta['raw_metadata']:
-                                with st.expander("View Full Metadata"):
-                                    st.json(img_meta['raw_metadata'])
-
-        # --- Grouping Logic ---
-        if group_by_date:
-            # Group by date string
-            # Note: items are already sorted by time
-            grouped = {}
-            for item in paginated_items:
-                d = item['date']
-                if d not in grouped: grouped[d] = []
-                grouped[d].append(item)
-            
-            # Render groups
-            for date_key in grouped:
-                st.subheader(f"📅 {date_key}")
-                render_grid(grouped[date_key])
-        else:
-            render_grid(paginated_items)
+        # --- RENDER FRAGMENT ---
+        # Pass the prepared items to the fragment
+        view_gallery_fragment(filtered_items, group_by_date)
 
 else:
     st.error(f"Output directory '{OUTPUT_DIR}' does not exist.")
