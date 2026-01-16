@@ -1,9 +1,13 @@
 import base64
 import os
+import logging
 from typing import Optional, Type
 from pydantic import BaseModel, Field
 from crewai.tools import BaseTool
 from openai import OpenAI
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 class VisionToolInput(BaseModel):
     """Input schema for VisionTool when image_path is required."""
@@ -34,7 +38,7 @@ class VisionTool(BaseTool):
         # Determine effective image path
         effective_path = self.fixed_image_path or image_path
         
-        print(f"\n[VisionTool] DEBUG: _run called. Fixed path: {repr(self.fixed_image_path)}, Arg path: {repr(image_path)}, Prompt: {repr(prompt)}")
+        logger.info(f"[VisionTool] _run called. Fixed path: {repr(self.fixed_image_path)}, Arg path: {repr(image_path)}")
         
         if not effective_path:
             return "Error: No image path provided. The tool requires an image path."
@@ -42,21 +46,21 @@ class VisionTool(BaseTool):
         # Clean path of potential quotes from LLM
         image_path = effective_path.strip().strip("'").strip('"')
 
-        print(f"[VisionTool] DEBUG: Using path={image_path}")
+        logger.info(f"[VisionTool] Using path={image_path}")
         client = OpenAI() # Assumes OPENAI_API_KEY is set in environment
 
         try:
             # Check if file exists
             if not os.path.exists(image_path):
-                print(f"[VisionTool] DEBUG: File not found at {image_path}")
+                logger.error(f"[VisionTool] File not found at {image_path}")
                 return f"Error: Image file not found at {image_path}"
 
             # Encode image
-            print("[VisionTool] DEBUG: Encoding image...")
+            logger.info("[VisionTool] Encoding image...")
             with open(image_path, "rb") as image_file:
                 base64_image = base64.b64encode(image_file.read()).decode('utf-8')
             
-            print("[VisionTool] DEBUG: Sending request to OpenAI...")
+            logger.info("[VisionTool] Sending request to OpenAI...")
             response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[

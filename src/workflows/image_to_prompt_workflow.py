@@ -1,11 +1,15 @@
 import os
 import asyncio
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
 from typing import List, Optional, Dict, Any
 from crewai import Agent, Task, Crew, Process
 
 load_dotenv()
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 from src.tools.vision_tool import VisionTool
 from utils.constants import DEFAULT_NEGATIVE_PROMPT
@@ -21,7 +25,7 @@ class ImageToPromptWorkflow:
         self.verbose = verbose
         self.config_manager = WorkflowConfigManager()
 
-    def _create_analyst(self, template_dir: str, image_path: str) -> Agent:
+    def _create_analyst(self, template_dir: str) -> Agent:
         # Load backstory from file in specific template directory
         backstory_path = os.path.join(template_dir, 'analyst_agent.txt')
         try:
@@ -40,16 +44,13 @@ class ImageToPromptWorkflow:
             You focus on OBJECTIVE reality. You do not fluff or over-dramatize.
             """
             if self.verbose:
-                print(f"Warning: Could not load analyst_agent.txt from {backstory_path}, using fallback. Error: {e}")
-
-        # Initialize VisionTool with fixed image path
-        vision_tool = VisionTool(fixed_image_path=image_path)
+                logger.warning(f"Warning: Could not load analyst_agent.txt from {backstory_path}, using fallback. Error: {e}")
 
         return Agent(
             role='Lead Visual Analyst',
-            goal='Analyze reference images to extract objective visual details for reproduction.',
+            goal='Review and structure the visual analysis of reference images.',
             backstory=backstory_content,
-            tools=[vision_tool],
+            tools=[], # No tools needed, receives analysis text
             verbose=self.verbose,
             allow_delegation=False,
             memory=False,
@@ -129,15 +130,15 @@ class ImageToPromptWorkflow:
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Image not found at {image_path}")
 
-        print(f"\n📸 Starting Workflow for: {image_path} (Persona: {persona_name}, Workflow: {workflow_type})")
+        logger.info(f"📸 Starting Workflow for: {image_path} (Persona: {persona_name}, Workflow: {workflow_type})")
         
         # DEBUG: Verify image readability
         try:
             with open(image_path, "rb") as f:
                 header = f.read(8)
-                print(f"[DEBUG] Successfully verified image readability at {image_path} (Header: {header})")
+                logger.info(f"[DEBUG] Successfully verified image readability at {image_path} (Header: {header})")
         except Exception as e:
-            print(f"[ERROR] Failed to read image at {image_path}: {e}")
+            logger.error(f"[ERROR] Failed to read image at {image_path}: {e}")
             raise IOError(f"Cannot read image file: {e}")
 
         # Load Persona Config
@@ -155,11 +156,44 @@ class ImageToPromptWorkflow:
         # Fallback to instagirl if type folder doesn't exist (though it should)
         if not os.path.exists(template_dir):
             if self.verbose:
-                print(f"Warning: Template directory for type '{persona_type}' not found at {template_dir}. Falling back to 'instagirl'.")
+                logger.warning(f"Warning: Template directory for type '{persona_type}' not found at {template_dir}. Falling back to 'instagirl'.")
             template_dir = os.path.join(prompts_base, 'instagirl')
 
-        # Initialize Agents with specific templates
-        analyst = self._create_analyst(template_dir, image_path)
+        # --- PROGRAMMATIC VISION STEP ---
+        # 1. Load Analyst Task (Prompt)
+        analyst_task_path = os.path.join(template_dir, 'analyst_task.txt')
+        try:
+            with open(analyst_task_path, 'r', encoding='utf-8') as f:
+                analyst_task_template = f.read()
+        except Exception as e:
+            # Fallback
+            analyst_task_template = "Analyze the visual elements of this image in detail."
+            if self.verbose:
+                logger.warning(f"Warning: Could not load analyst_task.txt from {analyst_task_path}, using fallback. Error: {e}")
+
+        # 2. Prepare Prompt (replace {image_path} with generic text or just keep prompt)
+        # The prompt usually says "Analyze the reference image at: {image_path}"
+        # We want to send the instructions to the Vision Model.
+        # We can just format it, but the VisionTool doesn't need the path in the PROMPT if it has it in the arg.
+        safe_image_path = Path(image_path).resolve().as_posix()
+        vision_prompt = analyst_task_template.format(image_path=f'"{safe_image_path}"')
+
+        # 3. Execute Vision Tool Programmatically
+        logger.info(f"Executing Vision Analysis programmatically for {image_path}...")
+        vision_tool_instance = VisionTool()
+        vision_result = vision_tool_instance._run(prompt=vision_prompt, image_path=image_path)
+
+        # 4. Check for Failure/Moderation
+        if vision_result.startswith("Error") or "Unfortunately" in vision_result or "unable to analyze" in vision_result:
+            logger.error(f"Vision Analysis Failed or Moderated: {vision_result}")
+            raise ValueError(f"Vision Analysis Failed: {vision_result}")
+        
+        logger.info("Vision Analysis Successful.")
+
+        # --- CREW SETUP ---
+
+        # Initialize Agents (Analyst no longer needs tool)
+        analyst = self._create_analyst(template_dir)
         turbo_engineer = self._create_turbo_engineer(template_dir)
         engineer = self._create_engineer() # Legacy engineer (WAN2.2)
 
@@ -169,33 +203,10 @@ class ImageToPromptWorkflow:
              # Fallback defaults if config is empty
              available_hairstyles = ["long loose hair"] 
 
-        # Task 1: Analyze
-        # Load task description from file
-        analyst_task_path = os.path.join(template_dir, 'analyst_task.txt')
-        try:
-            with open(analyst_task_path, 'r', encoding='utf-8') as f:
-                analyst_task_template = f.read()
-        except Exception as e:
-            # Fallback
-            analyst_task_template = """
-            Analyze the reference image at: {image_path}
-            
-            Using the Vision Tool, describe every detail of the poses, the clothes, and the body of the girl in the image.
-            """
-            if self.verbose:
-                print(f"Warning: Could not load analyst_task.txt from {analyst_task_path}, using fallback. Error: {e}")
-        
-        # Format the task description with image path
-        # Normalize path for LLM consumption (use forward slashes even on Windows)
-        safe_image_path = Path(image_path).resolve().as_posix()
-        # Force quotes around path to ensure LLM treats it as a single unit (handles spaces)
-        analyst_task_desc = analyst_task_template.format(image_path=f'"{safe_image_path}"')
-        
-        if self.verbose:
-            print(f"\n[DEBUG] Analyst Task Description:\n{analyst_task_desc}\n[DEBUG] End Task Description")
-
+        # Task 1: Analyst Review
+        # Pass the pre-computed vision description to the agent
         analyze_task = Task(
-            description=analyst_task_desc,
+            description=f"Review the following visual analysis of the image and structure it for the prompt engineer:\n\n{vision_result}",
             expected_output="A detailed textual description of the image's visual elements, covering body, outfit, pose, and background.",
             agent=analyst
         )
@@ -279,34 +290,20 @@ class ImageToPromptWorkflow:
             verbose=self.verbose
         )
 
-        try:
-            result = crew.kickoff()
-            final_prompt = str(result)
-            
-            # Capture the descriptive output
-            descriptive_prompt = str(analyze_task.output)
+        # No extra try/except here - allow exceptions (like Vision failure) to propagate to the caller (process_and_queue.py)
+        result = crew.kickoff()
+        final_prompt = str(result)
+        
+        # Capture the descriptive output
+        descriptive_prompt = str(analyze_task.output)
 
-            print(f"\n✅ Generated Prompt:\n{final_prompt}\n")
+        logger.info(f"\n✅ Generated Prompt:\n{final_prompt}\n")
 
-            return {
-                "reference_image": image_path,
-                "generated_prompt": final_prompt,
-                "descriptive_prompt": descriptive_prompt
-            }
-        except Exception as e:
-            import traceback
-            print(f"\n❌ Error during crew execution: {e}")
-            traceback.print_exc()
-            
-            # Fallback response as requested
-            fallback_msg = "The vision agent cannot analyze this image."
-            print(f"\n⚠️ Using fallback message: {fallback_msg}")
-            
-            return {
-                "reference_image": image_path,
-                "generated_prompt": fallback_msg,
-                "descriptive_prompt": fallback_msg
-            }
+        return {
+            "reference_image": image_path,
+            "generated_prompt": final_prompt,
+            "descriptive_prompt": descriptive_prompt
+        }
 
 if __name__ == "__main__":
     import argparse
