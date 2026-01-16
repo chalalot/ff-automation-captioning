@@ -7,22 +7,24 @@ from openai import OpenAI
 
 class VisionToolInput(BaseModel):
     """Input schema for VisionTool."""
-    image_path: str = Field(..., description="The local file path to the image to analyze.")
+    image_path: str = Field(..., description="The absolute local file path to the image to analyze. This argument is MANDATORY.")
     prompt: str = Field(..., description="The question or instruction for the vision model about the image.")
 
 class VisionTool(BaseTool):
     name: str = "Vision Tool"
     description: str = (
         "A tool that uses GPT-4o to analyze images. "
+        "It REQUIRE 'image_path' and 'prompt' as arguments. "
         "It takes a local image path and a prompt, and returns a text description."
     )
     args_schema: Type[BaseModel] = VisionToolInput
 
     def _run(self, image_path: str, prompt: str) -> str:
+        print(f"\n[VisionTool] DEBUG: _run called with args: image_path={repr(image_path)}, prompt={repr(prompt)}")
         # Clean path of potential quotes from LLM
         image_path = image_path.strip().strip("'").strip('"')
 
-        print(f"\n[VisionTool] DEBUG: Called with path={image_path}")
+        print(f"[VisionTool] DEBUG: Cleaned path={image_path}")
         client = OpenAI() # Assumes OPENAI_API_KEY is set in environment
 
         try:

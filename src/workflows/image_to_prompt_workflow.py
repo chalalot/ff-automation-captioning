@@ -178,6 +178,9 @@ class ImageToPromptWorkflow:
         safe_image_path = Path(image_path).resolve().as_posix()
         # Force quotes around path to ensure LLM treats it as a single unit (handles spaces)
         analyst_task_desc = analyst_task_template.format(image_path=f'"{safe_image_path}"')
+        
+        if self.verbose:
+            print(f"\n[DEBUG] Analyst Task Description:\n{analyst_task_desc}\n[DEBUG] End Task Description")
 
         analyze_task = Task(
             description=analyst_task_desc,
@@ -264,19 +267,34 @@ class ImageToPromptWorkflow:
             verbose=self.verbose
         )
 
-        result = crew.kickoff()
-        final_prompt = str(result)
-        
-        # Capture the descriptive output
-        descriptive_prompt = str(analyze_task.output)
+        try:
+            result = crew.kickoff()
+            final_prompt = str(result)
+            
+            # Capture the descriptive output
+            descriptive_prompt = str(analyze_task.output)
 
-        print(f"\n✅ Generated Prompt:\n{final_prompt}\n")
+            print(f"\n✅ Generated Prompt:\n{final_prompt}\n")
 
-        return {
-            "reference_image": image_path,
-            "generated_prompt": final_prompt,
-            "descriptive_prompt": descriptive_prompt
-        }
+            return {
+                "reference_image": image_path,
+                "generated_prompt": final_prompt,
+                "descriptive_prompt": descriptive_prompt
+            }
+        except Exception as e:
+            import traceback
+            print(f"\n❌ Error during crew execution: {e}")
+            traceback.print_exc()
+            
+            # Fallback response as requested
+            fallback_msg = "The vision agent cannot analyze this image."
+            print(f"\n⚠️ Using fallback message: {fallback_msg}")
+            
+            return {
+                "reference_image": image_path,
+                "generated_prompt": fallback_msg,
+                "descriptive_prompt": fallback_msg
+            }
 
 if __name__ == "__main__":
     import argparse
