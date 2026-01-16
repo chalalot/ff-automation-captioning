@@ -21,7 +21,7 @@ class ImageToPromptWorkflow:
         self.verbose = verbose
         self.config_manager = WorkflowConfigManager()
 
-    def _create_analyst(self, template_dir: str) -> Agent:
+    def _create_analyst(self, template_dir: str, image_path: str) -> Agent:
         # Load backstory from file in specific template directory
         backstory_path = os.path.join(template_dir, 'analyst_agent.txt')
         try:
@@ -42,11 +42,14 @@ class ImageToPromptWorkflow:
             if self.verbose:
                 print(f"Warning: Could not load analyst_agent.txt from {backstory_path}, using fallback. Error: {e}")
 
+        # Initialize VisionTool with fixed image path
+        vision_tool = VisionTool(fixed_image_path=image_path)
+
         return Agent(
             role='Lead Visual Analyst',
             goal='Analyze reference images to extract objective visual details for reproduction.',
             backstory=backstory_content,
-            tools=[VisionTool()],
+            tools=[vision_tool],
             verbose=self.verbose,
             allow_delegation=False,
             memory=False,
@@ -127,6 +130,15 @@ class ImageToPromptWorkflow:
             raise FileNotFoundError(f"Image not found at {image_path}")
 
         print(f"\n📸 Starting Workflow for: {image_path} (Persona: {persona_name}, Workflow: {workflow_type})")
+        
+        # DEBUG: Verify image readability
+        try:
+            with open(image_path, "rb") as f:
+                header = f.read(8)
+                print(f"[DEBUG] Successfully verified image readability at {image_path} (Header: {header})")
+        except Exception as e:
+            print(f"[ERROR] Failed to read image at {image_path}: {e}")
+            raise IOError(f"Cannot read image file: {e}")
 
         # Load Persona Config
         persona_config = self.config_manager.get_persona_config(persona_name)
@@ -147,7 +159,7 @@ class ImageToPromptWorkflow:
             template_dir = os.path.join(prompts_base, 'instagirl')
 
         # Initialize Agents with specific templates
-        analyst = self._create_analyst(template_dir)
+        analyst = self._create_analyst(template_dir, image_path)
         turbo_engineer = self._create_turbo_engineer(template_dir)
         engineer = self._create_engineer() # Legacy engineer (WAN2.2)
 

@@ -6,25 +6,43 @@ from crewai.tools import BaseTool
 from openai import OpenAI
 
 class VisionToolInput(BaseModel):
-    """Input schema for VisionTool."""
+    """Input schema for VisionTool when image_path is required."""
     image_path: str = Field(..., description="The absolute local file path to the image to analyze. This argument is MANDATORY.")
+    prompt: str = Field(..., description="The question or instruction for the vision model about the image.")
+
+class VisionToolFixedInput(BaseModel):
+    """Input schema for VisionTool when image_path is fixed."""
     prompt: str = Field(..., description="The question or instruction for the vision model about the image.")
 
 class VisionTool(BaseTool):
     name: str = "Vision Tool"
     description: str = (
         "A tool that uses GPT-4o to analyze images. "
-        "It REQUIRE 'image_path' and 'prompt' as arguments. "
-        "It takes a local image path and a prompt, and returns a text description."
+        "It takes a prompt and returns a text description."
     )
     args_schema: Type[BaseModel] = VisionToolInput
+    fixed_image_path: Optional[str] = None
 
-    def _run(self, image_path: str, prompt: str) -> str:
-        print(f"\n[VisionTool] DEBUG: _run called with args: image_path={repr(image_path)}, prompt={repr(prompt)}")
+    def __init__(self, fixed_image_path: Optional[str] = None, **kwargs):
+        super().__init__(**kwargs)
+        if fixed_image_path:
+            self.fixed_image_path = fixed_image_path
+            self.args_schema = VisionToolFixedInput
+            self.description = "A tool that uses GPT-4o to analyze the SPECIFIC image currently being processed. It takes a prompt and returns a text description."
+
+    def _run(self, prompt: str, image_path: Optional[str] = None) -> str:
+        # Determine effective image path
+        effective_path = self.fixed_image_path or image_path
+        
+        print(f"\n[VisionTool] DEBUG: _run called. Fixed path: {repr(self.fixed_image_path)}, Arg path: {repr(image_path)}, Prompt: {repr(prompt)}")
+        
+        if not effective_path:
+            return "Error: No image path provided. The tool requires an image path."
+
         # Clean path of potential quotes from LLM
-        image_path = image_path.strip().strip("'").strip('"')
+        image_path = effective_path.strip().strip("'").strip('"')
 
-        print(f"[VisionTool] DEBUG: Cleaned path={image_path}")
+        print(f"[VisionTool] DEBUG: Using path={image_path}")
         client = OpenAI() # Assumes OPENAI_API_KEY is set in environment
 
         try:
