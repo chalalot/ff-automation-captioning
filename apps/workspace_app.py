@@ -435,7 +435,7 @@ with col_q2:
         
         st.dataframe(df[cols_to_show], width='stretch', height=300)
         
-        if st.button("Refresh Status"):
+        if st.button("Refresh Status", key="refresh_status_gen"):
             st.rerun()
     else:
         st.info("No execution history found.")
