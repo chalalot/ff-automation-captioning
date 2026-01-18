@@ -7,6 +7,7 @@ import re
 import contextlib
 import json
 import math
+import logging
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -67,6 +68,18 @@ os.makedirs(PROCESSED_DIR, exist_ok=True)
 
 # Initialize Components
 storage = ImageLogsStorage()
+
+class StreamlitLogHandler(logging.Handler):
+    def __init__(self, streamlit_logger):
+        super().__init__()
+        self.streamlit_logger = streamlit_logger
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            self.streamlit_logger.write(msg + "\n")
+        except Exception:
+            self.handleError(record)
 
 # --- Persona Configuration ---
 with st.expander("👤 Persona Configuration", expanded=False):
@@ -440,33 +453,54 @@ with col1:
     process_status_placeholder = st.empty()
     
     if st.button("Start Processing & Queueing", type="primary"):
-        with st.spinner(f"Processing batch of {limit_choice} images..."):
-            try:
-                # Callback to update the metric live during processing
-                # Now accepts an optional filename argument from scripts/process_and_queue.py
-                def on_progress(filename=None):
-                    count = count_files_in_input() # update count
-                    input_count_placeholder.metric("Images Remaining in Sorted Folder", count)
-                    
-                    if filename:
-                        process_status_placeholder.info(f"🔄 **Processing:** `{filename}` ...")
-                    else:
-                        process_status_placeholder.info("🔄 Processing next image...")
+        st.subheader("📝 Live Execution Logs")
+        
+        # Scrollable container for logs
+        with st.container(height=300):
+            log_placeholder = st.empty()
+            st_logger = StreamlitLogger(log_placeholder)
+            
+            # Setup logging redirection
+            handler = StreamlitLogHandler(st_logger)
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            
+            root_logger = logging.getLogger()
+            root_logger.addHandler(handler)
+            
+            with st.spinner(f"Processing batch of {limit_choice} images..."):
+                try:
+                    # Callback to update the metric live during processing
+                    # Now accepts an optional filename argument from scripts/process_and_queue.py
+                    def on_progress(filename=None):
+                        count = count_files_in_input() # update count
+                        input_count_placeholder.metric("Images Remaining in Sorted Folder", count)
+                        
+                        if filename:
+                            process_status_placeholder.info(f"🔄 **Processing:** `{filename}` ...")
+                        else:
+                            process_status_placeholder.info("🔄 Processing next image...")
 
-                asyncio.run(run_process_script(
-                    persona=kol_persona, 
-                    workflow_type=workflow_choice.lower(),
-                    limit=limit_choice,
-                    progress_callback=on_progress,
-                    strength_model=str(strength_model),
-                    seed_strategy=seed_strategy,
-                    base_seed=base_seed
-                ))
-                process_status_placeholder.success("Batch processing complete!")
-                st.success("Batch processing complete! Check logs for details.")
-                st.rerun() # Refresh status
-            except Exception as e:
-                st.error(f"Error during processing: {e}")
+                    asyncio.run(run_process_script(
+                        persona=kol_persona, 
+                        workflow_type=workflow_choice.lower(),
+                        limit=limit_choice,
+                        progress_callback=on_progress,
+                        strength_model=str(strength_model),
+                        seed_strategy=seed_strategy,
+                        base_seed=base_seed
+                    ))
+                    process_status_placeholder.success("Batch processing complete!")
+                    st.success("Batch processing complete! Check logs above for details.")
+                    # Don't rerun immediately so user can see logs
+                    # st.rerun() 
+                except Exception as e:
+                    st.error(f"Error during processing: {e}")
+                finally:
+                    root_logger.removeHandler(handler)
+        
+        if st.button("Refresh Status"):
+            st.rerun()
 
 with col2:
     st.subheader("Step 2: Download Results")
