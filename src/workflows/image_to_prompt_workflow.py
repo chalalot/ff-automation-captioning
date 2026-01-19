@@ -184,7 +184,16 @@ class ImageToPromptWorkflow:
         vision_result = vision_tool_instance._run(prompt=vision_prompt, image_path=image_path)
 
         # 4. Check for Failure/Moderation
-        if vision_result.startswith("Error") or "Unfortunately" in vision_result or "unable to analyze" in vision_result:
+        # Relaxed check: Only fail if it says unable/unfortunately AND DOES NOT offer a description
+        is_refusal = "unable to analyze" in vision_result or "Unfortunately" in vision_result
+        has_content = "However," in vision_result or "description based on" in vision_result or "1. **" in vision_result
+
+        if vision_result.startswith("Error"):
+             # Real error from tool
+             logger.error(f"Vision Tool Error: {vision_result}")
+             raise ValueError(f"Vision Analysis Failed: {vision_result}")
+
+        if is_refusal and not has_content:
             logger.error(f"Vision Analysis Failed or Moderated: {vision_result}")
             raise ValueError(f"Vision Analysis Failed: {vision_result}")
         
