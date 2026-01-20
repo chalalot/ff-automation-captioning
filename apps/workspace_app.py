@@ -51,8 +51,8 @@ limit_choice = st.sidebar.number_input("Batch Limit", min_value=1, max_value=100
 strength_model = st.sidebar.slider("Model Strength", min_value=0.0, max_value=2.0, value=0.8, step=0.1)
 
 # Dimensions Configuration
-width = st.sidebar.number_input("Width", min_value=256, max_value=2048, value=1024, step=64)
-height = st.sidebar.number_input("Height", min_value=256, max_value=2048, value=1600, step=64)
+width = st.sidebar.text_input("Width", value="1024")
+height = st.sidebar.text_input("Height", value="1600")
 
 # Seed Configuration
 seed_strategy = st.sidebar.selectbox("Seed Strategy", ["random", "fixed"], index=0)

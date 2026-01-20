@@ -615,8 +615,8 @@ class ComfyUIClient:
         strength_model: Optional[str] = None,
         seed_strategy: str = "random",
         base_seed: int = 0,
-        width: int = 1024,
-        height: int = 1600
+        width: str = "1024",
+        height: str = "1600"
     ) -> str:
         """
         Start image generation using the new executions endpoint with workflow ID.
@@ -740,19 +740,19 @@ class ComfyUIClient:
                 },
                 "width": {
                     "field": "41.inputs.width",
-                    "dtype": "int"
+                    "dtype": "str"
                 },
                 "height": {
                     "field": "41.inputs.height",
-                    "dtype": "int"
+                    "dtype": "str"
                 }
             }
             payload["input_overrides"] = {
                 "positive_prompt": cleaned_prompt,
                 "persona_lora_name": "",
                 "persona_lora_strength_model": str(strength_model) if strength_model is not None else "1.0",
-                "width": width,
-                "height": height
+                "width": str(width),
+                "height": str(height)
             }
 
             if kol_persona:
