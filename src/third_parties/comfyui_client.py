@@ -614,7 +614,9 @@ class ComfyUIClient:
         input_image_path: Optional[str] = None,
         strength_model: Optional[str] = None,
         seed_strategy: str = "random",
-        base_seed: int = 0
+        base_seed: int = 0,
+        width: int = 1024,
+        height: int = 1600
     ) -> str:
         """
         Start image generation using the new executions endpoint with workflow ID.
@@ -630,6 +632,8 @@ class ComfyUIClient:
             strength_model: Strength of the LoRA model (optional, for Turbo workflow)
             seed_strategy: Strategy for seed generation ("random" or "fixed")
             base_seed: Base seed value if strategy is "fixed"
+            width: Width of the image (default: 1024)
+            height: Height of the image (default: 1600)
 
         Returns:
             execution_id: ID to track generation progress
@@ -733,12 +737,22 @@ class ComfyUIClient:
                 "persona_lora_strength_model": {
                     "field": "53.inputs.strength_model",
                     "dtype": "str"
+                },
+                "width": {
+                    "field": "41.inputs.width",
+                    "dtype": "int"
+                },
+                "height": {
+                    "field": "41.inputs.height",
+                    "dtype": "int"
                 }
             }
             payload["input_overrides"] = {
                 "positive_prompt": cleaned_prompt,
                 "persona_lora_name": "",
-                "persona_lora_strength_model": str(strength_model) if strength_model is not None else "1.0"
+                "persona_lora_strength_model": str(strength_model) if strength_model is not None else "1.0",
+                "width": width,
+                "height": height
             }
 
             if kol_persona:

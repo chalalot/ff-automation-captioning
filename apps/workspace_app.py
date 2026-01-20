@@ -50,6 +50,10 @@ workflow_choice = st.sidebar.selectbox("Workflow Type", ["Turbo", "WAN2.2"])
 limit_choice = st.sidebar.number_input("Batch Limit", min_value=1, max_value=1000, value=10)
 strength_model = st.sidebar.slider("Model Strength", min_value=0.0, max_value=2.0, value=0.8, step=0.1)
 
+# Dimensions Configuration
+width = st.sidebar.number_input("Width", min_value=256, max_value=2048, value=1024, step=64)
+height = st.sidebar.number_input("Height", min_value=256, max_value=2048, value=1600, step=64)
+
 # Seed Configuration
 seed_strategy = st.sidebar.selectbox("Seed Strategy", ["random", "fixed"], index=0)
 base_seed = 0
@@ -488,7 +492,9 @@ with col1:
                         progress_callback=on_progress,
                         strength_model=str(strength_model),
                         seed_strategy=seed_strategy,
-                        base_seed=base_seed
+                        base_seed=base_seed,
+                        width=width,
+                        height=height
                     ))
                     process_status_placeholder.success("Batch processing complete!")
                     st.success("Batch processing complete! Check logs above for details.")

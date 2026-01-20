@@ -20,7 +20,7 @@ from utils.constants import DEFAULT_NEGATIVE_PROMPT
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("ProcessAndQueue")
 
-async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callback=None, strength_model=None, seed_strategy="random", base_seed=0):
+async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callback=None, strength_model=None, seed_strategy="random", base_seed=0, width=1024, height=1600):
     """
     Main processing loop:
     1. Scans INPUT_DIR for images.
@@ -112,7 +112,9 @@ async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callb
                 workflow_type=workflow_type,
                 strength_model=strength_model,
                 seed_strategy=seed_strategy,
-                base_seed=base_seed
+                base_seed=base_seed,
+                width=width,
+                height=height
             )
             
             if execution_id:
@@ -150,6 +152,8 @@ if __name__ == "__main__":
     parser.add_argument("--strength_model", default=None, help="Strength of the LoRA model")
     parser.add_argument("--seed_strategy", default="random", help="Seed strategy (random/fixed)")
     parser.add_argument("--base_seed", type=int, default=0, help="Base seed for fixed strategy")
+    parser.add_argument("--width", type=int, default=1024, help="Image width")
+    parser.add_argument("--height", type=int, default=1600, help="Image height")
     args = parser.parse_args()
     
-    asyncio.run(main(persona=args.persona, workflow_type=args.workflow, limit=args.limit, strength_model=args.strength_model, seed_strategy=args.seed_strategy, base_seed=args.base_seed))
+    asyncio.run(main(persona=args.persona, workflow_type=args.workflow, limit=args.limit, strength_model=args.strength_model, seed_strategy=args.seed_strategy, base_seed=args.base_seed, width=args.width, height=args.height))
