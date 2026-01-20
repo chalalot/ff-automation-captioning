@@ -14,6 +14,7 @@ from src.config import GlobalConfig
 from src.workflows.video_storyboard_workflow import VideoStoryboardWorkflow
 from src.utils.streamlit_utils import get_sorted_images, StreamlitLogger
 from src.database.video_logs_storage import VideoLogsStorage
+from src.third_parties.gcs_client import check_blob_exists, download_blob_to_file
 from scripts.merge_videos_test import merge_videos
 
 # Initialize Storage
@@ -460,67 +461,41 @@ if client_available:
                         completed_videos.append(video_output_path)
                         continue
 
-                    # 2. If not found locally, check ComfyUI
+                    # 2. Check GCS for completion
                     try:
-                        status_data = asyncio.run(comfy_client.check_status_local(task_id))
-                        status = status_data.get("status")
+                        # Construct GCS Path: outputs/ComfyUI-{task_id}.mp4
+                        gcs_blob_name = f"outputs/ComfyUI-{task_id}.mp4"
                         
-                        with col:
-                            st.write(f"Task {task_id[-4:]}: **{status}**")
+                        is_completed_remote = check_blob_exists(gcs_blob_name)
                         
-                        if status == "succeed":
-                            video_url = status_data.get("video_url")
-                            # We need to download the file content to merge it
-                            # Extract filename from URL or status
-                            filename = status_data.get("filename") or f"{task_id}.mp4"
+                        if is_completed_remote:
+                            status = "succeed"
+                            with col:
+                                st.write(f"Task {task_id[-4:]}: **completed (GCS)**")
+                            
+                            filename = f"ComfyUI-{task_id}.mp4"
                             local_path = os.path.join(raw_video_dir, filename)
                             
                             # Download if not exists or force download
-                            # Check if file exists and has size
                             if not os.path.exists(local_path) or os.path.getsize(local_path) == 0:
                                 try:
-                                    # Use ComfyUIClient's request method or add headers manually
-                                    # Since video_url is complete, we use requests with headers if api_key exists
-                                    headers = {
-                                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                                    }
-                                    if comfy_client.api_key:
-                                        headers["Authorization"] = f"Bearer {comfy_client.api_key}"
-                                    
-                                    resp = requests.get(video_url, headers=headers)
-                                    
-                                    if resp.status_code == 200:
-                                        with open(local_path, "wb") as f:
-                                            f.write(resp.content)
-                                    else:
-                                        st.error(f"Failed to download {task_id}: HTTP {resp.status_code}")
-                                        # Enhanced Debugging
-                                        with st.expander(f"Debug Info for {task_id[-4:]}", expanded=False):
-                                            st.write(f"**URL:** `{video_url}`")
-                                            st.write(f"**API Key Present:** {bool(comfy_client.api_key)}")
-                                            st.write("**Headers Sent:**")
-                                            st.json(headers)
-                                            st.write("**Response Headers:**")
-                                            st.json(dict(resp.headers))
-                                            st.write(f"**Response Content:** `{resp.text[:200]}`")
-
+                                    download_blob_to_file(gcs_blob_name, local_path)
                                 except Exception as e:
                                     st.error(f"Download error for {task_id}: {e}")
-                                    import traceback
-                                    st.code(traceback.format_exc())
                                         
                             if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
                                 completed_videos.append(local_path)
                                 # Update DB
                                 video_storage.update_result(task_id, local_path, 'completed')
                             else:
-                                st.warning(f"Video file missing for {task_id}")
+                                st.warning(f"Video file missing after download for {task_id}")
                             
-                        elif status in ["running", "pending", "queued"]:
+                        else:
+                            # Not found in GCS yet, assume running
+                            status = "running"
+                            with col:
+                                st.write(f"Task {task_id[-4:]}: **running**")
                             pending_count += 1
-                        elif status == "failed":
-                            video_storage.update_result(task_id, None, 'failed')
-                            failed_count += 1
                             
                     except Exception as e:
                         st.error(f"Error checking {task_id}: {e}")

@@ -582,3 +582,27 @@ def test_gcs_connection() -> bool:
     except Exception as e:
         logger.error(f"GCS connection test failed: {e}")
         return False
+
+
+def check_blob_exists(blob_name: str, bucket_name: str = GCS_BUCKET_NAME) -> bool:
+    """Check if a blob exists in GCS."""
+    try:
+        client = _get_gcs_client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        return blob.exists()
+    except Exception as e:
+        logger.error(f"Failed to check blob existence: {e}")
+        return False
+
+
+def download_blob_to_file(blob_name: str, file_path: str, bucket_name: str = GCS_BUCKET_NAME):
+    """Download a blob to a local file."""
+    try:
+        client = _get_gcs_client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        blob.download_to_filename(file_path)
+    except Exception as e:
+        logger.error(f"Failed to download blob: {e}")
+        raise

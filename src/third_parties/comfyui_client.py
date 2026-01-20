@@ -69,7 +69,7 @@ WORKFLOW_IDS = {
 
 # Persona mappings
 PERSONA_LORA_MAPPING_TURBO = {
-    "Jennie": "z-image-persona/jennie_test_training_copy.safetensors",
+    "Jennie": "z-image-persona/jennie_turbo_v3.safetensors",
     "Sephera": "z-image-persona/sephera_turbo_v2.safetensors",
     "Nya": "z-image-persona/nya-z-image-turbo-v1.safetensors",
     "Emi": "z-image-persona/emi-z-image-turbo-v1_copy_copy_copy.safetensors",
@@ -307,50 +307,84 @@ class ComfyUIClient:
         # 1. Upload Image to Local ComfyUI
         server_image_name = await self.upload_image_local(image_path)
         
+        # Read GCP Key
+        try:
+            with open('soulie-gcp-bucket.json', 'r') as f:
+                gcp_key_content = f.read()
+        except Exception as e:
+            logger.error(f"Failed to read soulie-gcp-bucket.json: {e}")
+            raise ComfyUIConfigError(f"Could not read GCP key file: {e}")
+
         # 2. Construct Workflow
         # Based on user provided example
         workflow = {
             "38": {
                 "inputs": {
-                    "filename_prefix": "video/ComfyUI",
-                    "format": "auto",
-                    "codec": "auto",
-                    "video": [
-                        "45",
-                        0
-                    ]
+                "filename_prefix": "video/ComfyUI",
+                "format": "auto",
+                "codec": "auto",
+                "video": [
+                    "45",
+                    0
+                ]
                 },
                 "class_type": "SaveVideo",
                 "_meta": {
-                    "title": "Save Video"
+                "title": "Save Video"
                 }
             },
             "40": {
                 "inputs": {
-                    "image": server_image_name
+                "image": server_image_name
                 },
                 "class_type": "LoadImage",
                 "_meta": {
-                    "title": "Load Image"
+                "title": "Load Image"
                 }
             },
             "45": {
                 "inputs": {
-                    "prompt": prompt,
-                    "negative_prompt": DEFAULT_NEGATIVE_PROMPT, 
-                    "model_name": "kling-v2-1", # Default to v2-1 as per example? Or parameterize?
-                    "cfg_scale": 0.8,
-                    "mode": "std",
-                    "aspect_ratio": "9:16", # Default? Or infer from image?
-                    "duration": duration,
-                    "start_frame": [
-                        "40",
-                        0
-                    ]
+                "prompt": prompt,
+                "negative_prompt": DEFAULT_NEGATIVE_PROMPT,
+                "model_name": "kling-v2-1",
+                "cfg_scale": 0.8,
+                "mode": "std",
+                "aspect_ratio": "9:16",
+                "duration": duration,
+                "start_frame": [
+                    "40",
+                    0
+                ]
                 },
                 "class_type": "KlingImage2VideoNode",
                 "_meta": {
-                    "title": "Kling Image to Video"
+                "title": "Kling Image to Video"
+                }
+            },
+            "48": {
+                "inputs": {
+                "filename_prefix": "video/ComfyUI",
+                "format": "auto",
+                "codec": "auto",
+                "filename": "",
+                "custom_filename": "",
+                "save_to_cloud": True,
+                "Cloud ▾": None,
+                "cloud_provider": "Google Cloud Storage",
+                "bucket_link": "soulie-gcp-bucket",
+                "cloud_folder_path": "outputs",
+                "cloud_api_key": gcp_key_content,
+                "save_to_local": False,
+                "Local ▾": None,
+                "local_folder_path": "video",
+                "video": [
+                    "45",
+                    0
+                ]
+                },
+                "class_type": "SaveVideoExtended",
+                "_meta": {
+                "title": "Save Video Extended"
                 }
             }
         }
