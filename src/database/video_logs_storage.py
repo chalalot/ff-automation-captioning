@@ -43,16 +43,21 @@ class VideoLogsStorage:
                     source_image_path TEXT,
                     video_output_path TEXT,
                     status TEXT DEFAULT 'pending',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    filename_id TEXT
                 );
             """)
             
-            # Migration: Add batch_id column if it doesn't exist (for existing tables)
+            # Migration: Add batch_id/filename_id column if it doesn't exist (for existing tables)
             cursor.execute("PRAGMA table_info(video_logs)")
             columns = [info[1] for info in cursor.fetchall()]
             if 'batch_id' not in columns:
                 logger.info("Migrating video_logs: Adding batch_id column")
                 cursor.execute("ALTER TABLE video_logs ADD COLUMN batch_id TEXT")
+            
+            if 'filename_id' not in columns:
+                logger.info("Migrating video_logs: Adding filename_id column")
+                cursor.execute("ALTER TABLE video_logs ADD COLUMN filename_id TEXT")
             
             conn.commit()
         except Exception as e:
@@ -61,7 +66,7 @@ class VideoLogsStorage:
         finally:
             conn.close()
 
-    def log_execution(self, execution_id: str, prompt: str, source_image_path: str = None, batch_id: str = None) -> int:
+    def log_execution(self, execution_id: str, prompt: str, source_image_path: str = None, batch_id: str = None, filename_id: str = None) -> int:
         """
         Log a new execution.
         
@@ -73,9 +78,9 @@ class VideoLogsStorage:
 
         try:
             cursor.execute("""
-                INSERT INTO video_logs (execution_id, prompt, source_image_path, video_output_path, status, batch_id)
-                VALUES (?, ?, ?, NULL, 'pending', ?)
-            """, (execution_id, prompt, source_image_path, batch_id))
+                INSERT INTO video_logs (execution_id, prompt, source_image_path, video_output_path, status, batch_id, filename_id)
+                VALUES (?, ?, ?, NULL, 'pending', ?, ?)
+            """, (execution_id, prompt, source_image_path, batch_id, filename_id))
             
             row_id = cursor.lastrowid
             conn.commit()

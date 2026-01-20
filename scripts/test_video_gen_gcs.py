@@ -7,21 +7,49 @@ import time
 sys.path.append(os.getcwd())
 
 from src.third_parties.comfyui_client import ComfyUIClient
-from src.third_parties.gcs_client import check_blob_exists, download_blob_to_file
+
+# Try importing GCS client, but don't fail if missing
+try:
+    from src.third_parties.gcs_client import check_blob_exists, download_blob_to_file
+    GCS_AVAILABLE = True
+except ImportError:
+    print("Warning: GCS Client not available (missing google-cloud-storage?). Skipping GCS check.")
+    GCS_AVAILABLE = False
 
 async def main():
     print("Initializing ComfyUI Client...")
     try:
+        # Load env vars if needed (dotenv)
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+        except ImportError:
+            pass
+        
         client = ComfyUIClient()
     except Exception as e:
         print(f"Failed to init client: {e}")
         return
 
-    # Image path
+    # Image path - try to find a real one or use dummy
     image_path = "results/result_ref_1766634154_d875e649.png"
     if not os.path.exists(image_path):
-        print(f"Image not found: {image_path}")
-        return
+        if os.path.exists("results"):
+            files = [f for f in os.listdir("results") if f.endswith(".png")]
+            if files:
+                image_path = os.path.join("results", files[0])
+                print(f"Using existing image: {image_path}")
+            else:
+                # Create dummy
+                os.makedirs("results", exist_ok=True)
+                with open(image_path, "wb") as f:
+                    f.write(b"dummy content")
+                print(f"Created dummy image at {image_path}")
+        else:
+             os.makedirs("results", exist_ok=True)
+             with open(image_path, "wb") as f:
+                 f.write(b"dummy content")
+             print(f"Created dummy image at {image_path}")
 
     prompt = "A test video generation prompt"
     
@@ -32,36 +60,46 @@ async def main():
             image_path=image_path,
             duration="5"
         )
-        print(f"Task queued. ID: {task_id}")
+        print(f"✅ Task queued successfully!")
+        print(f"🆔 Prompt ID: {task_id}")
     except Exception as e:
-        print(f"Failed to queue task: {e}")
+        print(f"❌ Failed to queue task: {e}")
         return
 
-    # Poll for completion via GCS
-    print("Polling GCS for completion...")
-    gcs_blob_name = f"outputs/ComfyUI-{task_id}.mp4"
+    # Poll for completion using PROMPT ID
+    print(f"Polling ComfyUI for completion using Prompt ID {task_id}...")
     
-    max_retries = 60 # 60 * 10s = 10 mins (video gen takes time)
+    max_retries = 60 # 10 mins
     for i in range(max_retries):
-        exists = check_blob_exists(gcs_blob_name)
-        if exists:
-            print(f"Video found in GCS: {gcs_blob_name}")
+        try:
+            status_res = await client.check_status_local(task_id)
+            status = status_res.get("status")
             
-            # Download
-            local_path = f"video-raw/test_{task_id}.mp4"
-            os.makedirs("video-raw", exist_ok=True)
+            if status == "succeed":
+                print(f"✅ Task Completed!")
+                filename = status_res.get("filename")
+                print(f"📄 Filename reported by ComfyUI: {filename}")
+                
+                if GCS_AVAILABLE:
+                    gcs_blob_name = f"outputs/{filename}"
+                    print(f"🔍 Checking GCS for: {gcs_blob_name}")
+                    if check_blob_exists(gcs_blob_name):
+                        print("✅ File found on GCS!")
+                    else:
+                        print("⚠️ File NOT found on GCS (yet?).")
+                return
+                
+            elif status == "failed":
+                print(f"❌ Task Failed: {status_res.get('message')}")
+                return
             
-            print(f"Downloading to {local_path}...")
-            download_blob_to_file(gcs_blob_name, local_path)
-            
-            if os.path.exists(local_path):
-                print(f"Download successful! Size: {os.path.getsize(local_path)} bytes")
             else:
-                print("Download failed (file missing locally).")
-            return
-        
-        print(f"Waiting... ({i+1}/{max_retries})")
-        time.sleep(10) # check every 10 seconds
+                print(f"⏳ Status: {status}... ({i+1}/{max_retries})")
+                
+        except Exception as e:
+            print(f"Error checking status: {e}")
+            
+        await asyncio.sleep(10)
 
     print("Timeout waiting for video.")
 

@@ -461,20 +461,30 @@ if client_available:
                         completed_videos.append(video_output_path)
                         continue
 
-                    # 2. Check GCS for completion
+                    # 2. Check ComfyUI Status & GCS
                     try:
-                        # Construct GCS Path: outputs/ComfyUI-{task_id}.mp4
-                        gcs_blob_name = f"outputs/ComfyUI-{task_id}.mp4"
+                        # Ask ComfyUI for status and filename
+                        status_res = asyncio.run(comfy_client.check_status_local(task_id))
+                        status = status_res.get("status")
                         
-                        is_completed_remote = check_blob_exists(gcs_blob_name)
-                        
-                        if is_completed_remote:
-                            status = "succeed"
-                            with col:
-                                st.write(f"Task {task_id[-4:]}: **completed (GCS)**")
+                        if status == "succeed":
+                            # Get filename from ComfyUI response
+                            filename = status_res.get("filename")
+                            if not filename:
+                                # Fallback if filename missing
+                                filename = f"ComfyUI-{task_id}.mp4" 
                             
-                            filename = f"ComfyUI-{task_id}.mp4"
-                            local_path = os.path.join(raw_video_dir, filename)
+                            # Construct GCS Path (assuming outputs folder)
+                            gcs_blob_name = f"outputs/{filename}"
+                            
+                            # Check if it exists on GCS
+                            is_completed_remote = check_blob_exists(gcs_blob_name)
+                            
+                            if is_completed_remote:
+                                with col:
+                                    st.write(f"Task {task_id[-4:]}: **completed**")
+                                
+                                local_path = os.path.join(raw_video_dir, filename)
                             
                             # Download if not exists or force download
                             if not os.path.exists(local_path) or os.path.getsize(local_path) == 0:
