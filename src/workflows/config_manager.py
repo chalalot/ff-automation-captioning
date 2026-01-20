@@ -110,3 +110,43 @@ class WorkflowConfigManager:
                     f.write("\n".join(current_types))
             except Exception as e:
                 print(f"Error saving persona types: {e}")
+
+    def create_persona_template_structure(self, type_name: str) -> bool:
+        """
+        Creates directory structure and default files for a new persona type.
+        Returns True if created, False if already exists or failed.
+        """
+        # 1. Add to types list
+        self.add_persona_type(type_name)
+        
+        # 2. Create directory
+        template_dir = os.path.join(self.PROMPTS_DIR, 'templates', type_name)
+        
+        # If directory already exists, we might still want to ensure files exist, 
+        # but let's assume if it exists we don't overwrite.
+        if not os.path.exists(template_dir):
+            try:
+                os.makedirs(template_dir, exist_ok=True)
+                
+                # 3. Create empty files
+                files_to_create = [
+                    'turbo_agent.txt',
+                    'turbo_framework.txt',
+                    'turbo_constraints.txt', 
+                    'turbo_example.txt',
+                    'turbo_prompt_template.txt',
+                    'analyst_agent.txt',
+                    'analyst_task.txt'
+                ]
+                
+                for filename in files_to_create:
+                    file_path = os.path.join(template_dir, filename)
+                    if not os.path.exists(file_path):
+                        with open(file_path, 'w', encoding='utf-8') as f:
+                            f.write("") # Create empty file
+                        
+                return True
+            except Exception as e:
+                print(f"Error creating persona template structure: {e}")
+                return False
+        return True

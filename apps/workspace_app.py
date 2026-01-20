@@ -126,10 +126,45 @@ with st.expander("👤 Persona Configuration", expanded=False):
 with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
     st.info("Edit Agent Backstories and Task Descriptions for the workflow. These are organized by 'Persona Type'.")
     
-    # Select Persona Type to Edit
-    available_types = config_manager.get_persona_types()
-    selected_type_for_editor = st.selectbox("Select Persona Type Template to Edit", available_types, key="editor_type_select")
+    # Header with Add Button
+    col_header_1, col_header_2 = st.columns([3, 1])
+    with col_header_1:
+         # Select Persona Type to Edit
+        available_types = config_manager.get_persona_types()
+        selected_type_for_editor = st.selectbox("Select Persona Type Template to Edit", available_types, key="editor_type_select")
     
+    with col_header_2:
+        st.write("") # Vertical spacer
+        st.write("") 
+        # Toggle creation form
+        if "show_create_type" not in st.session_state:
+            st.session_state.show_create_type = False
+            
+        if st.button("➕ New Type"):
+            st.session_state.show_create_type = not st.session_state.show_create_type
+
+    # Creation Form
+    if st.session_state.show_create_type:
+        with st.form("create_type_form"):
+            st.write("#### Create New Persona Type")
+            st.caption("This will create a new folder in `prompts/templates/` with default empty text files.")
+            new_type_name = st.text_input("New Type Name (e.g. 'tech_guru')")
+            
+            if st.form_submit_button("Create & Initialize"):
+                if new_type_name and new_type_name.strip():
+                    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '', new_type_name.strip())
+                    if safe_name:
+                        if config_manager.create_persona_template_structure(safe_name):
+                            st.success(f"✅ Created type '{safe_name}'! Refreshing...")
+                            st.session_state.show_create_type = False
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to create '{safe_name}'. Directory might already exist.")
+                    else:
+                        st.error("Invalid name. Use alphanumeric characters, underscores, or hyphens.")
+                else:
+                    st.warning("Please enter a name.")
+
     col_edit, col_test = st.columns([1.5, 1])
     
     # Paths - Dynamic based on selected type
