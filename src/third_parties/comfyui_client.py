@@ -288,7 +288,8 @@ class ComfyUIClient:
         self,
         prompt: str,
         image_path: str,
-        duration: str = "5"
+        duration: str = "5",
+        filename_id: Optional[str] = None
     ) -> str:
         """
         Queue Kling Video Generation via Local ComfyUI Partner Node.
@@ -297,6 +298,7 @@ class ComfyUIClient:
             prompt: Text prompt
             image_path: Path to input image
             duration: "5" or "10"
+            filename_id: Optional unique ID for the filename
             
         Returns:
             prompt_id: The ID of the queued prompt
@@ -366,8 +368,8 @@ class ComfyUIClient:
                 "filename_prefix": "video/ComfyUI",
                 "format": "auto",
                 "codec": "auto",
-                "filename": "",
-                "custom_filename": "",
+                "filename": f"ComfyUI-{filename_id}" if filename_id else "",
+                "custom_filename": f"ComfyUI-{filename_id}" if filename_id else "",
                 "save_to_cloud": True,
                 "Cloud ▾": None,
                 "cloud_provider": "Google Cloud Storage",

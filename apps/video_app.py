@@ -344,13 +344,15 @@ if client_available:
                 else:
                     with st.spinner("Queueing task..."):
                         try:
+                            filename_id = str(uuid.uuid4())
                             task_id = asyncio.run(comfy_client.generate_video_kling(
                                 prompt=final_prompt,
                                 image_path=st.session_state.selected_video_source,
-                                duration=duration
+                                duration=duration,
+                                filename_id=filename_id
                             ))
                             # Log to DB
-                            video_storage.log_execution(task_id, final_prompt, st.session_state.selected_video_source)
+                            video_storage.log_execution(task_id, final_prompt, st.session_state.selected_video_source, filename_id=filename_id)
                             st.success(f"Task Queued! ID: {task_id}")
                         except Exception as e:
                             st.error(f"Failed to queue task: {e}")
@@ -376,13 +378,15 @@ if client_available:
                         for idx, item in enumerate(variations):
                             prompt = item.get("prompt")
                             try:
+                                filename_id = str(uuid.uuid4())
                                 task_id = asyncio.run(comfy_client.generate_video_kling(
                                     prompt=prompt,
                                     image_path=st.session_state.selected_video_source,
-                                    duration=duration
+                                    duration=duration,
+                                    filename_id=filename_id
                                 ))
                                 # Log to DB with batch_id
-                                video_storage.log_execution(task_id, prompt, st.session_state.selected_video_source, batch_id=batch_id)
+                                video_storage.log_execution(task_id, prompt, st.session_state.selected_video_source, batch_id=batch_id, filename_id=filename_id)
                                 st.session_state.batch_task_ids.append(task_id)
                                 
                             except Exception as e:
@@ -450,6 +454,7 @@ if client_available:
                     db_record = video_storage.get_execution(task_id)
                     local_status = db_record.get('status') if db_record else None
                     video_output_path = db_record.get('video_output_path') if db_record else None
+                    filename_id = db_record.get('filename_id') if db_record else None
                     
                     is_completed_locally = False
                     if local_status == 'completed' and video_output_path and os.path.exists(video_output_path) and os.path.getsize(video_output_path) > 0:
@@ -470,7 +475,11 @@ if client_available:
                         if status == "succeed":
                             # Get filename from ComfyUI response
                             filename = status_res.get("filename")
-                            if not filename:
+                            
+                            # Use filename_id if available and filename not reported
+                            if not filename and filename_id:
+                                filename = f"ComfyUI-{filename_id}.mp4"
+                            elif not filename:
                                 # Fallback if filename missing
                                 filename = f"ComfyUI-{task_id}.mp4" 
                             
