@@ -211,11 +211,11 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
             
             with tab_analyst_agent:
                 st.caption("The 'Backstory' and personality of the Analyst Agent.")
-                content_analyst_agent = st.text_area("Analyst Backstory", value=load_content(path_analyst_agent), height=400, key="editor_analyst_agent")
+                content_analyst_agent = st.text_area("Analyst Backstory", value=load_content(path_analyst_agent), height=400, key=f"editor_analyst_agent_{selected_type_for_editor}")
                 
             with tab_analyst_task:
                 st.caption("The exact instructions for the Image Analysis task. Use `{image_path}` as placeholder.")
-                content_analyst_task = st.text_area("Analyst Task", value=load_content(path_analyst_task), height=400, key="editor_analyst_task")
+                content_analyst_task = st.text_area("Analyst Task", value=load_content(path_analyst_task), height=400, key=f"editor_analyst_task_{selected_type_for_editor}")
             
             if st.button("Save Analyst Configuration", key="save_analyst"):
                 try:
@@ -233,7 +233,7 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
             
             with tab_turbo_agent:
                 st.caption("The 'Backstory' and personality of the Turbo Engineer Agent.")
-                content_turbo_agent = st.text_area("Turbo Agent Backstory", value=load_content(path_turbo_agent), height=400, key="editor_turbo_agent")
+                content_turbo_agent = st.text_area("Turbo Agent Backstory", value=load_content(path_turbo_agent), height=400, key=f"editor_turbo_agent_{selected_type_for_editor}")
             
             with tab_turbo_task:
                 st.caption("Construct the Prompt Generation Task Description (Template).")
@@ -241,11 +241,11 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
                 sub_fw, sub_cs, sub_ex = st.tabs(["Framework", "Constraints", "Example"])
                 
                 with sub_fw:
-                    content_fw = st.text_area("Framework", value=load_content(path_framework), height=300, key="editor_fw", label_visibility="collapsed")
+                    content_fw = st.text_area("Framework", value=load_content(path_framework), height=300, key=f"editor_fw_{selected_type_for_editor}", label_visibility="collapsed")
                 with sub_cs:
-                    content_cs = st.text_area("Constraints", value=load_content(path_constraints), height=300, key="editor_cs", label_visibility="collapsed")
+                    content_cs = st.text_area("Constraints", value=load_content(path_constraints), height=300, key=f"editor_cs_{selected_type_for_editor}", label_visibility="collapsed")
                 with sub_ex:
-                    content_ex = st.text_area("Example", value=load_content(path_example), height=300, key="editor_ex", label_visibility="collapsed")
+                    content_ex = st.text_area("Example", value=load_content(path_example), height=300, key=f"editor_ex_{selected_type_for_editor}", label_visibility="collapsed")
 
             if st.button("Save Turbo Configuration", key="save_turbo"):
                 try:
@@ -413,17 +413,30 @@ with st.expander("📂 Manage Sorted Images", expanded=True):
 
 # Optional Upload Logic
 with st.expander("Upload Images to Input Directory (Optional)"):
-    uploaded_files = st.file_uploader("Upload images to process", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'webp'])
+    if "uploader_key" not in st.session_state:
+        st.session_state.uploader_key = 0
+
+    uploaded_files = st.file_uploader("Upload images to process", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'webp'], key=f"uploader_{st.session_state.uploader_key}")
     if uploaded_files:
-        if st.button("Save to Input Directory"):
-            for uploaded_file in uploaded_files:
-                file_path = os.path.join(INPUT_DIR, uploaded_file.name)
-                with open(file_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-            st.success(f"Saved {len(uploaded_files)} images to {INPUT_DIR}.")
-            # Update count immediately after upload
-            input_count_placeholder.metric("Images Remaining in Sorted Folder", count_files_in_input())
-            st.rerun()
+        col_up_save, col_up_clear = st.columns([1, 1])
+        with col_up_save:
+            if st.button("Save to Input Directory"):
+                for uploaded_file in uploaded_files:
+                    file_path = os.path.join(INPUT_DIR, uploaded_file.name)
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                st.success(f"Saved {len(uploaded_files)} images to {INPUT_DIR}.")
+                # Update count immediately after upload
+                input_count_placeholder.metric("Images Remaining in Sorted Folder", count_files_in_input())
+                
+                # Increment key to clear uploader
+                st.session_state.uploader_key += 1
+                st.rerun()
+
+        with col_up_clear:
+            if st.button("Clear Uploads"):
+                st.session_state.uploader_key += 1
+                st.rerun()
 
 # --- Queue & Status Section ---
 st.header("📊 System Status")
