@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 from src.tools.vision_tool import VisionTool
 from utils.constants import DEFAULT_NEGATIVE_PROMPT
 from src.workflows.config_manager import WorkflowConfigManager
+from src.config import GlobalConfig
 
 class ImageToPromptWorkflow:
     """
@@ -25,7 +26,7 @@ class ImageToPromptWorkflow:
         self.verbose = verbose
         self.config_manager = WorkflowConfigManager()
 
-    def _create_analyst(self, template_dir: str) -> Agent:
+    def _create_analyst(self, template_dir: str, llm: Any) -> Agent:
         # Load backstory from file in specific template directory
         backstory_path = os.path.join(template_dir, 'analyst_agent.txt')
         try:
@@ -54,10 +55,10 @@ class ImageToPromptWorkflow:
             verbose=self.verbose,
             allow_delegation=False,
             memory=False,
-            llm="gpt-4o"
+            llm=llm
         )
 
-    def _create_engineer(self) -> Agent:
+    def _create_engineer(self, llm: Any) -> Agent:
         # Engineer agent for WAN2.2 (Legacy) - potentially not used in Turbo workflow
         return Agent(
             role='Instagirl WAN2.2 Prompt Specialist',
@@ -78,10 +79,10 @@ class ImageToPromptWorkflow:
             verbose=self.verbose,
             allow_delegation=False,
             memory=False,
-            llm="gpt-4o"
+            llm=llm
         )
 
-    def _create_turbo_engineer(self, template_dir: str) -> Agent:
+    def _create_turbo_engineer(self, template_dir: str, llm: Any) -> Agent:
         # Load backstory from file in specific template directory
         backstory_path = os.path.join(template_dir, 'turbo_agent.txt')
         try:
@@ -112,7 +113,7 @@ class ImageToPromptWorkflow:
             verbose=self.verbose,
             allow_delegation=False,
             memory=False,
-            llm="gpt-4o"
+            llm=llm
         )
 
     async def process(self, image_path: str, persona_name: str = "Jennie", workflow_type: str = "turbo", vision_model: str = "gpt-4o") -> Dict[str, str]:
@@ -201,11 +202,24 @@ class ImageToPromptWorkflow:
         logger.info("Vision Analysis Successful.")
 
         # --- CREW SETUP ---
+        
+        # Determine Agent LLM
+        if vision_model.lower().startswith("grok"):
+            from crewai import LLM
+            llm = LLM(
+                model="openai/" + vision_model,
+                base_url="https://api.x.ai/v1",
+                api_key=GlobalConfig.GROK_API_KEY
+            )
+            logger.info(f"Using Grok LLM ({vision_model}) for Agents")
+        else:
+            llm = vision_model # "gpt-4o"
+            logger.info(f"Using default LLM ({vision_model}) for Agents")
 
         # Initialize Agents (Analyst no longer needs tool)
-        analyst = self._create_analyst(template_dir)
-        turbo_engineer = self._create_turbo_engineer(template_dir)
-        engineer = self._create_engineer() # Legacy engineer (WAN2.2)
+        analyst = self._create_analyst(template_dir, llm)
+        turbo_engineer = self._create_turbo_engineer(template_dir, llm)
+        engineer = self._create_engineer(llm) # Legacy engineer (WAN2.2)
 
         # Get Hairstyle Config
         available_hairstyles = persona_config.get("hairstyles", [])
