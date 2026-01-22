@@ -5,6 +5,7 @@ from typing import Optional, Type
 from pydantic import BaseModel, Field
 from crewai.tools import BaseTool
 from openai import OpenAI
+from src.config import GlobalConfig
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -26,19 +27,21 @@ class VisionTool(BaseTool):
     )
     args_schema: Type[BaseModel] = VisionToolInput
     fixed_image_path: Optional[str] = None
+    model_name: str = "gpt-4o"
 
-    def __init__(self, fixed_image_path: Optional[str] = None, **kwargs):
+    def __init__(self, fixed_image_path: Optional[str] = None, model_name: str = "gpt-4o", **kwargs):
         super().__init__(**kwargs)
+        self.model_name = model_name
         if fixed_image_path:
             self.fixed_image_path = fixed_image_path
             self.args_schema = VisionToolFixedInput
-            self.description = "A tool that uses GPT-4o to analyze the SPECIFIC image currently being processed. It takes a prompt and returns a text description."
+            self.description = f"A tool that uses {self.model_name} to analyze the SPECIFIC image currently being processed. It takes a prompt and returns a text description."
 
     def _run(self, prompt: str, image_path: Optional[str] = None) -> str:
         # Determine effective image path
         effective_path = self.fixed_image_path or image_path
         
-        logger.info(f"[VisionTool] _run called. Fixed path: {repr(self.fixed_image_path)}, Arg path: {repr(image_path)}")
+        logger.info(f"[VisionTool] _run called. Fixed path: {repr(self.fixed_image_path)}, Arg path: {repr(image_path)}, Model: {self.model_name}")
         
         if not effective_path:
             return "Error: No image path provided. The tool requires an image path."
@@ -47,7 +50,20 @@ class VisionTool(BaseTool):
         image_path = effective_path.strip().strip("'").strip('"')
 
         logger.info(f"[VisionTool] Using path={image_path}")
-        client = OpenAI() # Assumes OPENAI_API_KEY is set in environment
+        
+        # Configure Client based on model
+        if self.model_name.lower().startswith("grok"):
+            api_key = GlobalConfig.GROK_API_KEY
+            if not api_key:
+                return "Error: GROK_API_KEY not found in environment variables."
+            client = OpenAI(
+                api_key=api_key,
+                base_url="https://api.x.ai/v1"
+            )
+            logger.info(f"[VisionTool] Using Grok API with model {self.model_name}")
+        else:
+            client = OpenAI() # Assumes OPENAI_API_KEY is set in environment
+            logger.info(f"[VisionTool] Using OpenAI API with model {self.model_name}")
 
         try:
             # Check if file exists
@@ -60,9 +76,9 @@ class VisionTool(BaseTool):
             with open(image_path, "rb") as image_file:
                 base64_image = base64.b64encode(image_file.read()).decode('utf-8')
             
-            logger.info("[VisionTool] Sending request to OpenAI...")
+            logger.info(f"[VisionTool] Sending request to LLM ({self.model_name})...")
             response = client.chat.completions.create(
-                model="gpt-4o",
+                model=self.model_name,
                 messages=[
                     {
                         "role": "user",

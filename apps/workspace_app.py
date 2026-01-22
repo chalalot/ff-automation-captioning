@@ -47,6 +47,11 @@ if not available_personas:
 
 kol_persona = st.sidebar.selectbox("KOL Persona", available_personas)
 workflow_choice = st.sidebar.selectbox("Workflow Type", ["Turbo", "WAN2.2"])
+vision_model_choice = st.sidebar.selectbox("Vision Model", ["ChatGPT (gpt-4o)", "Grok (grok-2-vision-1212)"])
+vision_model = "gpt-4o"
+if "Grok" in vision_model_choice:
+    vision_model = "grok-2-vision-1212"
+
 limit_choice = st.sidebar.number_input("Batch Limit", min_value=1, max_value=1000, value=10)
 strength_model = st.sidebar.slider("Model Strength", min_value=0.0, max_value=2.0, value=0.8, step=0.1)
 
@@ -305,7 +310,8 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
                         result = asyncio.run(workflow.process(
                             image_path=temp_path,
                             persona_name=kol_persona,
-                            workflow_type="turbo" 
+                            workflow_type="turbo",
+                            vision_model=vision_model
                         ))
                     
                     generated_prompt = result.get('generated_prompt', "No prompt generated.")
@@ -542,7 +548,8 @@ with col1:
                         seed_strategy=seed_strategy,
                         base_seed=base_seed,
                         width=width,
-                        height=height
+                        height=height,
+                        vision_model=vision_model
                     ))
                     process_status_placeholder.success("Batch processing complete!")
                     st.success("Batch processing complete! Check logs above for details.")

@@ -115,7 +115,7 @@ class ImageToPromptWorkflow:
             llm="gpt-4o"
         )
 
-    async def process(self, image_path: str, persona_name: str = "Jennie", workflow_type: str = "turbo") -> Dict[str, str]:
+    async def process(self, image_path: str, persona_name: str = "Jennie", workflow_type: str = "turbo", vision_model: str = "gpt-4o") -> Dict[str, str]:
         """
         Run the workflow for a single image.
         
@@ -123,6 +123,7 @@ class ImageToPromptWorkflow:
             image_path: Path to local image file.
             persona_name: Name of the persona (e.g. "Jennie").
             workflow_type: Type of workflow ("turbo" or "wan2.2").
+            vision_model: The vision model to use ("gpt-4o" or "grok-2-vision-1212").
             
         Returns:
             A dictionary containing the reference image path and the generated prompt.
@@ -179,8 +180,8 @@ class ImageToPromptWorkflow:
         vision_prompt = analyst_task_template.format(image_path=f'"{safe_image_path}"')
 
         # 3. Execute Vision Tool Programmatically
-        logger.info(f"Executing Vision Analysis programmatically for {image_path}...")
-        vision_tool_instance = VisionTool()
+        logger.info(f"Executing Vision Analysis programmatically for {image_path} with model {vision_model}...")
+        vision_tool_instance = VisionTool(model_name=vision_model)
         vision_result = vision_tool_instance._run(prompt=vision_prompt, image_path=image_path)
 
         # 4. Check for Failure/Moderation

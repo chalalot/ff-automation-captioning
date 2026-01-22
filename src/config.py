@@ -47,6 +47,9 @@ class GlobalConfig:
     OPENAI_API_BASE = os.getenv("OPENAI_BASE_URL")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+    # GROK (xAI)
+    GROK_API_KEY = os.getenv("GROK_API_KEY")
+
     # API 
     API_HOST = os.getenv("API_HOST", "0.0.0.0")
     API_PORT = int(os.getenv("API_PORT", "8000"))

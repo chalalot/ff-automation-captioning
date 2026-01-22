@@ -20,7 +20,7 @@ from utils.constants import DEFAULT_NEGATIVE_PROMPT
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("ProcessAndQueue")
 
-async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callback=None, strength_model=None, seed_strategy="random", base_seed=0, width="1024", height="1600"):
+async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callback=None, strength_model=None, seed_strategy="random", base_seed=0, width="1024", height="1600", vision_model="gpt-4o"):
     """
     Main processing loop:
     1. Scans INPUT_DIR for images.
@@ -99,7 +99,8 @@ async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callb
             result = await workflow.process(
                 image_path=str(dest_image_path),
                 persona_name=persona,
-                workflow_type=workflow_type
+                workflow_type=workflow_type,
+                vision_model=vision_model
             )
             prompt_content = result['generated_prompt']
             
@@ -154,6 +155,7 @@ if __name__ == "__main__":
     parser.add_argument("--base_seed", type=int, default=0, help="Base seed for fixed strategy")
     parser.add_argument("--width", default="1024", help="Image width")
     parser.add_argument("--height", default="1600", help="Image height")
+    parser.add_argument("--vision_model", default="gpt-4o", help="Vision model (gpt-4o/grok-2-vision-1212)")
     args = parser.parse_args()
     
-    asyncio.run(main(persona=args.persona, workflow_type=args.workflow, limit=args.limit, strength_model=args.strength_model, seed_strategy=args.seed_strategy, base_seed=args.base_seed, width=args.width, height=args.height))
+    asyncio.run(main(persona=args.persona, workflow_type=args.workflow, limit=args.limit, strength_model=args.strength_model, seed_strategy=args.seed_strategy, base_seed=args.base_seed, width=args.width, height=args.height, vision_model=args.vision_model))
