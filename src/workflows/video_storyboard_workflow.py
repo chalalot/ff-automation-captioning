@@ -202,6 +202,8 @@ class VideoStoryboardWorkflow:
                         new_item['variation'] = item['variation']
                     elif 'Variation' in item:
                         new_item['variation'] = item['Variation']
+                    elif 'variation_index' in item:
+                        new_item['variation'] = item['variation_index']
                     else:
                         new_item['variation'] = i + 1
                     
@@ -222,6 +224,8 @@ class VideoStoryboardWorkflow:
                         new_item['prompt'] = item['prompt']
                     elif 'Prompt' in item:
                         new_item['prompt'] = item['Prompt']
+                    elif 'image_prompt' in item:
+                        new_item['prompt'] = item['image_prompt']
                     else:
                         new_item['prompt'] = "No prompt generated."
                     
