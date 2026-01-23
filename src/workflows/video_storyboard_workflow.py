@@ -189,6 +189,56 @@ class VideoStoryboardWorkflow:
                 print(f"Raw output: {raw_output}")
                 parsed_variations = [{"variation": i, "concept_name": "Error parsing", "prompt": raw_output} for i in range(1, 4)]
 
+        # --- Validation & Normalization ---
+        final_variations = []
+        if isinstance(parsed_variations, list):
+            for i, item in enumerate(parsed_variations):
+                if isinstance(item, dict):
+                    # Normalize keys
+                    new_item = {}
+                    
+                    # variation
+                    if 'variation' in item:
+                        new_item['variation'] = item['variation']
+                    elif 'Variation' in item:
+                        new_item['variation'] = item['Variation']
+                    else:
+                        new_item['variation'] = i + 1
+                    
+                    # concept_name
+                    if 'concept_name' in item:
+                        new_item['concept_name'] = item['concept_name']
+                    elif 'Concept_name' in item:
+                        new_item['concept_name'] = item['Concept_name']
+                    elif 'concept' in item:
+                        new_item['concept_name'] = item['concept']
+                    elif 'Concept' in item:
+                        new_item['concept_name'] = item['Concept']
+                    else:
+                        new_item['concept_name'] = f"Concept {i+1}"
+
+                    # prompt
+                    if 'prompt' in item:
+                        new_item['prompt'] = item['prompt']
+                    elif 'Prompt' in item:
+                        new_item['prompt'] = item['Prompt']
+                    else:
+                        new_item['prompt'] = "No prompt generated."
+                    
+                    final_variations.append(new_item)
+                else:
+                    # Item is not a dict? Maybe a string?
+                    final_variations.append({
+                        "variation": i + 1,
+                        "concept_name": f"Variation {i+1}",
+                        "prompt": str(item)
+                    })
+        else:
+             # parsed_variations is not a list?
+             final_variations = [{"variation": i, "concept_name": "Error format", "prompt": str(parsed_variations)} for i in range(1, 4)]
+        
+        parsed_variations = final_variations
+
         return {
             "source_image": image_path,
             "persona": persona_name,

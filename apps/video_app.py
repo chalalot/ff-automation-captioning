@@ -330,7 +330,7 @@ if client_available:
         with col_q1:
             st.markdown("### Single Queue")
             # Selection for Prompt
-            prompt_options = {f"Variation {v['variation']}: {v['concept_name']}": v['prompt'] for v in variations}
+            prompt_options = {f"Variation {v.get('variation', i+1)}: {v.get('concept_name', 'Unknown')}": v.get('prompt', '') for i, v in enumerate(variations)}
             selected_option = st.selectbox("Select Prompt", list(prompt_options.keys()) + ["Custom Prompt"])
             
             if selected_option == "Custom Prompt":
