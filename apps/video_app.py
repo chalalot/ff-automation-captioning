@@ -437,8 +437,8 @@ if client_available:
             pending_count = 0
             failed_count = 0
             
-            # Temporary directory for downloads
-            raw_video_dir = "video-raw"
+            # Temporary directory for downloads (inside OUTPUT_DIR to ensure it persists in VM mounts)
+            raw_video_dir = os.path.join(OUTPUT_DIR, "video-raw")
             os.makedirs(raw_video_dir, exist_ok=True)
             
             with st.spinner("Checking status for all tasks..."):
@@ -473,18 +473,17 @@ if client_available:
                         status = status_res.get("status")
                         
                         if status == "succeed":
-                            # Get filename from ComfyUI response
-                            filename = status_res.get("filename")
-                            
-                            # Use filename_id if available and filename not reported
-                            if not filename and filename_id:
+                            # 1. Determine Filename (Prioritize filename_id if available)
+                            if filename_id:
                                 filename = f"ComfyUI-{filename_id}.mp4"
-                            elif not filename:
-                                # Fallback if filename missing
-                                filename = f"ComfyUI-{task_id}.mp4" 
+                            else:
+                                filename = status_res.get("filename")
+                                if not filename:
+                                    filename = f"ComfyUI-{task_id}.mp4"
                             
-                            # Construct GCS Path (assuming outputs folder)
+                            # Construct GCS Path
                             gcs_blob_name = f"outputs/{filename}"
+                            local_path = os.path.join(raw_video_dir, filename)
                             
                             # Check if it exists on GCS
                             is_completed_remote = check_blob_exists(gcs_blob_name)
@@ -493,22 +492,29 @@ if client_available:
                                 with col:
                                     st.write(f"Task {task_id[-4:]}: **completed**")
                                 
-                                local_path = os.path.join(raw_video_dir, filename)
-                            
-                            # Download if not exists or force download
-                            if not os.path.exists(local_path) or os.path.getsize(local_path) == 0:
-                                try:
-                                    download_blob_to_file(gcs_blob_name, local_path)
-                                except Exception as e:
-                                    st.error(f"Download error for {task_id}: {e}")
-                                        
-                            if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
-                                completed_videos.append(local_path)
-                                # Update DB
-                                video_storage.update_result(task_id, local_path, 'completed')
+                                # Download if not exists or empty
+                                if not os.path.exists(local_path) or os.path.getsize(local_path) == 0:
+                                    try:
+                                        download_blob_to_file(gcs_blob_name, local_path)
+                                        if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+                                            completed_videos.append(local_path)
+                                            # Update DB
+                                            video_storage.update_result(task_id, local_path, 'completed')
+                                        else:
+                                            st.warning(f"Video file missing after download for {task_id}")
+                                    except Exception as e:
+                                        st.error(f"Download error for {task_id}: {e}")
+                                else:
+                                    # Already downloaded
+                                    completed_videos.append(local_path)
+                                    # Update DB
+                                    video_storage.update_result(task_id, local_path, 'completed')
                             else:
-                                st.warning(f"Video file missing after download for {task_id}")
-                            
+                                # Status says succeed but not found in GCS yet (maybe upload lag)
+                                with col:
+                                    st.write(f"Task {task_id[-4:]}: **uploading...**")
+                                pending_count += 1
+                                
                         else:
                             # Not found in GCS yet, assume running
                             status = "running"
@@ -547,6 +553,16 @@ if client_available:
                             st.success("Merge Complete!")
                             st.video(merged_path)
                             st.markdown(f"**Merged Video Saved:** `{merged_path}`")
+
+                            # Cleanup raw videos
+                            for v_path in completed_videos:
+                                try:
+                                    if os.path.exists(v_path):
+                                        os.remove(v_path)
+                                except Exception as cleanup_err:
+                                    print(f"Failed to delete {v_path}: {cleanup_err}")
+                            st.info("Temporary raw videos cleaned up.")
+                            
                         except Exception as e:
                             st.error(f"Merge failed: {e}")
                 else:

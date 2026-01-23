@@ -320,21 +320,6 @@ class ComfyUIClient:
         # 2. Construct Workflow
         # Based on user provided example
         workflow = {
-            "38": {
-                "inputs": {
-                "filename_prefix": "video/ComfyUI",
-                "format": "auto",
-                "codec": "auto",
-                "video": [
-                    "45",
-                    0
-                ]
-                },
-                "class_type": "SaveVideo",
-                "_meta": {
-                "title": "Save Video"
-                }
-            },
             "40": {
                 "inputs": {
                 "image": server_image_name
@@ -465,6 +450,15 @@ class ComfyUIClient:
                                  "status": "succeed",
                                  "video_url": video_url,
                                  "filename": fname
+                             }
+
+                         # Check for cloud upload case (empty images, animated=True)
+                         # Some nodes like SaveVideoExtended return empty images list when uploading to cloud
+                         if not node_output["images"] and node_output.get("animated", [False])[0]:
+                             return {
+                                 "status": "succeed",
+                                 "video_url": None, 
+                                 "filename": None
                              }
                              
                 # If we have history but no video output found

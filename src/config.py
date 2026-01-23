@@ -50,6 +50,9 @@ class GlobalConfig:
     # GROK (xAI)
     GROK_API_KEY = os.getenv("GROK_API_KEY")
 
+    # GEMINI (Google)
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
     # API 
     API_HOST = os.getenv("API_HOST", "0.0.0.0")
     API_PORT = int(os.getenv("API_PORT", "8000"))

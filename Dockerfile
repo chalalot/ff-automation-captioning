@@ -4,6 +4,9 @@ FROM python:3.11-slim
 # 2. Create a folder inside the container to hold your app
 WORKDIR /app
 
+# Disable CrewAI Telemetry to prevent SIGTERM errors in threads
+ENV CREWAI_TELEMETRY_OPT_OUT=true
+
 # 3. Copy only requirements first (this optimizes build speed)
 COPY requirements.txt .
 

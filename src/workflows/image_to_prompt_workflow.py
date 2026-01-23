@@ -212,6 +212,13 @@ class ImageToPromptWorkflow:
                 api_key=GlobalConfig.GROK_API_KEY
             )
             logger.info(f"Using Grok LLM ({vision_model}) for Agents")
+        elif vision_model.lower().startswith("gemini"):
+            from crewai import LLM
+            llm = LLM(
+                model="gemini/" + vision_model,
+                api_key=GlobalConfig.GEMINI_API_KEY
+            )
+            logger.info(f"Using Gemini LLM ({vision_model}) for Agents")
         else:
             llm = vision_model # "gpt-4o"
             logger.info(f"Using default LLM ({vision_model}) for Agents")

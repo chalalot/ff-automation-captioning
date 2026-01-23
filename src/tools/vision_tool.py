@@ -5,6 +5,7 @@ from typing import Optional, Type
 from pydantic import BaseModel, Field
 from crewai.tools import BaseTool
 from openai import OpenAI
+import PIL.Image
 from src.config import GlobalConfig
 
 # Configure logger
@@ -51,7 +52,36 @@ class VisionTool(BaseTool):
 
         logger.info(f"[VisionTool] Using path={image_path}")
         
-        # Configure Client based on model
+        # GEMINI
+        if self.model_name.lower().startswith("gemini"):
+            api_key = GlobalConfig.GEMINI_API_KEY
+            if not api_key:
+                return "Error: GEMINI_API_KEY not found in environment variables."
+            
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=api_key)
+                
+                logger.info(f"[VisionTool] Using Gemini API with model {self.model_name}")
+                
+                # Check file
+                if not os.path.exists(image_path):
+                     logger.error(f"[VisionTool] File not found at {image_path}")
+                     return f"Error: Image file not found at {image_path}"
+                
+                logger.info("[VisionTool] Loading image for Gemini...")
+                img = PIL.Image.open(image_path)
+                model = genai.GenerativeModel(self.model_name)
+                
+                logger.info(f"[VisionTool] Sending request to Gemini ({self.model_name})...")
+                response = model.generate_content([prompt, img])
+                return response.text
+            except ImportError:
+                 return "Error: google-generativeai library not installed."
+            except Exception as e:
+                 return f"Error processing image with Gemini: {str(e)}"
+
+        # Configure Client based on model (OpenAI / Grok)
         if self.model_name.lower().startswith("grok"):
             api_key = GlobalConfig.GROK_API_KEY
             if not api_key:

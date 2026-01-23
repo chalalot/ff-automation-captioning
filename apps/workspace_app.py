@@ -47,10 +47,22 @@ if not available_personas:
 
 kol_persona = st.sidebar.selectbox("KOL Persona", available_personas)
 workflow_choice = st.sidebar.selectbox("Workflow Type", ["Turbo", "WAN2.2"])
-vision_model_choice = st.sidebar.selectbox("Vision Model", ["ChatGPT (gpt-4o)", "Grok (grok-2-vision-1212)"])
+vision_model_choice = st.sidebar.selectbox(
+    "Vision Model", 
+    [
+        "ChatGPT (gpt-4o)", 
+        "Grok (grok-2-vision-1212)", 
+        "Gemini 1.5 Flash (gemini-1.5-flash)", 
+        "Gemini 1.5 Pro (gemini-1.5-pro)"
+    ]
+)
 vision_model = "gpt-4o"
 if "Grok" in vision_model_choice:
     vision_model = "grok-2-vision-1212"
+elif "gemini-1.5-flash" in vision_model_choice:
+    vision_model = "gemini-1.5-flash"
+elif "gemini-1.5-pro" in vision_model_choice:
+    vision_model = "gemini-1.5-pro"
 
 limit_choice = st.sidebar.number_input("Batch Limit", min_value=1, max_value=1000, value=10)
 strength_model = st.sidebar.slider("Model Strength", min_value=0.0, max_value=2.0, value=0.8, step=0.1)

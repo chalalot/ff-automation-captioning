@@ -4,3 +4,8 @@ openai
 python-dotenv
 google-cloud-storage
 PyJWT
+moviepy
+psycopg2-binary
+requests
+pandas
+google-generativeai
