@@ -6,6 +6,7 @@ import contextlib
 import pandas as pd
 import requests
 import uuid
+import time
 
 # Path setup
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -432,7 +433,19 @@ if client_available:
         st.write(f"Current Batch ID: `{st.session_state.batch_id}`")
         st.write(f"Tasks: {len(st.session_state.batch_task_ids)}")
         
-        if st.button("🔄 Check Batch Status & Merge"):
+        col_poll, col_stop = st.columns(2)
+        with col_poll:
+            if st.button("🔄 Start Auto-Poll & Merge"):
+                st.session_state.polling_active = True
+                st.rerun()
+        
+        with col_stop:
+            if st.button("⏹️ Stop Polling"):
+                st.session_state.polling_active = False
+                st.rerun()
+
+        if st.session_state.get("polling_active", False):
+            st.info("🔄 Polling active... checking status...")
             completed_videos = [] # List of paths
             pending_count = 0
             failed_count = 0
@@ -502,8 +515,10 @@ if client_available:
                                             video_storage.update_result(task_id, local_path, 'completed')
                                         else:
                                             st.warning(f"Video file missing after download for {task_id}")
+                                            failed_count += 1
                                     except Exception as e:
                                         st.error(f"Download error for {task_id}: {e}")
+                                        failed_count += 1
                                 else:
                                     # Already downloaded
                                     completed_videos.append(local_path)
@@ -514,6 +529,11 @@ if client_available:
                                 with col:
                                     st.write(f"Task {task_id[-4:]}: **uploading...**")
                                 pending_count += 1
+
+                        elif status == "failed":
+                             with col:
+                                 st.error(f"Task {task_id[-4:]}: **FAILED**")
+                             failed_count += 1
                                 
                         else:
                             # Not found in GCS yet, assume running
@@ -524,6 +544,7 @@ if client_available:
                             
                     except Exception as e:
                         st.error(f"Error checking {task_id}: {e}")
+                        failed_count += 1
             
             # Display Completed Videos
             if completed_videos:
@@ -534,8 +555,10 @@ if client_available:
                         st.video(v_path)
                         st.caption(os.path.basename(v_path))
             
-            # Merge Logic
+            # Merge Logic or Wait
             if pending_count == 0:
+                st.session_state.polling_active = False # Stop polling
+                
                 if len(completed_videos) > 0:
                     st.success(f"All tasks finished. {len(completed_videos)} successful, {failed_count} failed. Merging successful videos...")
                     
@@ -569,5 +592,7 @@ if client_available:
                     st.error("All tasks failed or no videos available to merge.")
             else:
                 st.info(f"Waiting for {pending_count} tasks to complete before merging. ({len(completed_videos)} ready, {failed_count} failed)")
+                time.sleep(10)
+                st.rerun()
     else:
         st.info("No active batch in session. Queue variations to start a batch or recover one above.")
