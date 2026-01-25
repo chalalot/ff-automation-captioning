@@ -35,6 +35,13 @@ def check_grok_setup():
     try:
         import litellm
         logger.info(f"✅ LiteLLM installed: {litellm.__version__ if hasattr(litellm, '__version__') else 'Unknown version'}")
+        
+        # Disable Telemetry for test
+        litellm.telemetry = False
+        litellm.success_callback = []
+        litellm.failure_callback = []
+        logger.info("✅ Disabled LiteLLM Telemetry for test")
+
     except ImportError as e:
         logger.error(f"❌ LiteLLM Import Failed: {e}")
         return

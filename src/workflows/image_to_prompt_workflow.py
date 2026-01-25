@@ -206,6 +206,12 @@ class ImageToPromptWorkflow:
         # Determine Agent LLM
         if vision_model.lower().startswith("grok"):
             from crewai import LLM
+            import litellm
+            
+            # DISABLE LiteLLM Telemetry & Callbacks to prevent "atexit" errors on shutdown
+            litellm.telemetry = False
+            litellm.success_callback = []
+            litellm.failure_callback = []
             
             # FORCE Environment Variables for LiteLLM
             # This is critical because LiteLLM often prioritizes env vars or requires them for openai/ custom providers
