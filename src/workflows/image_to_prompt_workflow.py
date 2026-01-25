@@ -211,22 +211,39 @@ class ImageToPromptWorkflow:
             # DISABLE LiteLLM Telemetry & Callbacks to prevent "atexit" errors on shutdown
             litellm.telemetry = False
             litellm.turn_off_message_logging = True # Further disable logging to avoid proxy requirement
+            litellm.suppress_debug_info = True
             litellm.success_callback = []
             litellm.failure_callback = []
             
-            # FORCE Environment Variables for LiteLLM
+            # FORCE Environment Variables for LiteLLM (Temporarily)
             # This is critical because LiteLLM often prioritizes env vars or requires them for openai/ custom providers
             # independent of what is passed in the constructor in some versions/environments.
+            # We capture original values to restore them, ensuring we don't break other tools (like standard OpenAI).
+            original_api_key = os.environ.get("OPENAI_API_KEY")
+            original_api_base = os.environ.get("OPENAI_API_BASE")
+
             if GlobalConfig.GROK_API_KEY:
                 os.environ["OPENAI_API_KEY"] = GlobalConfig.GROK_API_KEY
                 os.environ["OPENAI_API_BASE"] = "https://api.x.ai/v1"
             
-            llm = LLM(
-                model="openai/" + vision_model,
-                base_url="https://api.x.ai/v1",
-                api_key=GlobalConfig.GROK_API_KEY
-            )
-            logger.info(f"Using Grok LLM ({vision_model}) for Agents")
+            try:
+                llm = LLM(
+                    model="openai/" + vision_model,
+                    base_url="https://api.x.ai/v1",
+                    api_key=GlobalConfig.GROK_API_KEY
+                )
+                logger.info(f"Using Grok LLM ({vision_model}) for Agents")
+            finally:
+                # Restore original environment variables to prevent side effects
+                if original_api_key:
+                    os.environ["OPENAI_API_KEY"] = original_api_key
+                elif "OPENAI_API_KEY" in os.environ:
+                    del os.environ["OPENAI_API_KEY"]
+                
+                if original_api_base:
+                    os.environ["OPENAI_API_BASE"] = original_api_base
+                elif "OPENAI_API_BASE" in os.environ:
+                    del os.environ["OPENAI_API_BASE"]
         elif vision_model.lower().startswith("gemini"):
             from crewai import LLM
             llm = LLM(
