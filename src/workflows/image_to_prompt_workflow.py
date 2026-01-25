@@ -206,6 +206,14 @@ class ImageToPromptWorkflow:
         # Determine Agent LLM
         if vision_model.lower().startswith("grok"):
             from crewai import LLM
+            
+            # FORCE Environment Variables for LiteLLM
+            # This is critical because LiteLLM often prioritizes env vars or requires them for openai/ custom providers
+            # independent of what is passed in the constructor in some versions/environments.
+            if GlobalConfig.GROK_API_KEY:
+                os.environ["OPENAI_API_KEY"] = GlobalConfig.GROK_API_KEY
+                os.environ["OPENAI_API_BASE"] = "https://api.x.ai/v1"
+            
             llm = LLM(
                 model="openai/" + vision_model,
                 base_url="https://api.x.ai/v1",

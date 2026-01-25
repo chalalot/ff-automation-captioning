@@ -7,7 +7,6 @@ import pandas as pd
 import requests
 import uuid
 import time
-from moviepy import VideoFileClip
 
 # Path setup
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -38,23 +37,6 @@ kol_persona = st.sidebar.selectbox("KOL Persona", ["Jennie", "Sephera", "Mika", 
 st.markdown("Select a source image from the Results Gallery to generate video.")
 
 # --- Helper Functions ---
-def generate_thumbnail(video_path):
-    """Generate a thumbnail for the video if it doesn't exist."""
-    thumb_path = os.path.splitext(video_path)[0] + ".png"
-    if os.path.exists(thumb_path):
-        return thumb_path
-    
-    try:
-        # Use t=0.1 or minimal duration to ensure we get a frame
-        with VideoFileClip(video_path) as clip:
-            duration = clip.duration
-            capture_time = min(0.1, duration) if duration > 0 else 0
-            clip.save_frame(thumb_path, t=capture_time)
-        return thumb_path
-    except Exception as e:
-        print(f"Error generating thumbnail for {video_path}: {e}")
-        return None
-
 def get_sorted_videos(directory):
     if not os.path.exists(directory):
         return []
@@ -655,13 +637,7 @@ with tab_gallery:
                 with cols[idx]:
                     video_path = os.path.join(OUTPUT_DIR, video_filename)
                     
-                    # Generate or retrieve thumbnail
-                    thumb_path = generate_thumbnail(video_path)
-                    
                     # Use container for cleaner layout
                     with st.container():
                         st.caption(video_filename)
-                        if thumb_path and os.path.exists(thumb_path):
-                             st.video(video_path, poster=thumb_path)
-                        else:
-                             st.video(video_path)
+                        st.video(video_path)
