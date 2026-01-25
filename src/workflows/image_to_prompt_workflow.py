@@ -210,6 +210,7 @@ class ImageToPromptWorkflow:
             
             # DISABLE LiteLLM Telemetry & Callbacks to prevent "atexit" errors on shutdown
             litellm.telemetry = False
+            litellm.turn_off_message_logging = True # Further disable logging to avoid proxy requirement
             litellm.success_callback = []
             litellm.failure_callback = []
             

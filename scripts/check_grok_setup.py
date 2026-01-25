@@ -38,6 +38,7 @@ def check_grok_setup():
         
         # Disable Telemetry for test
         litellm.telemetry = False
+        litellm.turn_off_message_logging = True
         litellm.success_callback = []
         litellm.failure_callback = []
         logger.info("✅ Disabled LiteLLM Telemetry for test")

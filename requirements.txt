@@ -10,3 +10,6 @@ requests
 pandas
 google-generativeai
 litellm
+fastapi
+uvicorn
+apscheduler
