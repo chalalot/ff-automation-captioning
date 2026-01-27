@@ -42,6 +42,7 @@ services:
       - ../results:/app/results
       - ../prompts:/app/prompts
       - ../image_logs.db:/app/image_logs.db
+      - ../video_logs.db:/app/video_logs.db
       - ../.env:/app/.env
     env_file:
       - .env

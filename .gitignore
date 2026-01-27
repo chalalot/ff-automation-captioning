@@ -2,6 +2,7 @@
 results/
 processed/
 __pycache__/
+video_logs.db
 image_logs.db
 .env
 soulie-gcp-bucket.json

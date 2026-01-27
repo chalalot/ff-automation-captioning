@@ -123,6 +123,9 @@ with tab_create:
 
         if st.button("Save Video Configuration"):
             try:
+                # Ensure directory exists
+                os.makedirs(base_workflow_dir, exist_ok=True)
+                
                 # Save all
                 with open(os.path.join(base_workflow_dir, files["analyst_agent"]), 'w', encoding='utf-8') as f: f.write(val_aa)
                 with open(os.path.join(base_workflow_dir, files["analyst_task"]), 'w', encoding='utf-8') as f: f.write(val_at)
