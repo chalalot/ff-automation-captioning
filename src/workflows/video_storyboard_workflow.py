@@ -110,6 +110,13 @@ class VideoStoryboardWorkflow:
              analyst_task_template = "Analyze the source image at: {image_path}..." # Fallback
 
         safe_image_path = Path(image_path).resolve().as_posix()
+        
+        # Enhanced Debugging for VM
+        print("="*40)
+        print(f"DEBUG: Safe Image Path: {safe_image_path}")
+        print(f"DEBUG: Raw Template Content (Start):\n{analyst_task_template[:300]}")
+        print("="*40)
+
         try:
             analyst_task_desc = analyst_task_template.format(image_path=f'"{safe_image_path}"')
         except Exception as e:
