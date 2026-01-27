@@ -363,7 +363,18 @@ with tab_create:
             variations = st.session_state.video_results["variations"]
             st.info(f"Available Variations: {len(variations)}")
             
-            duration = st.selectbox("Duration", ["5", "10"], index=0)
+            # Configuration
+            c1, c2, c3, c4, c5 = st.columns(5)
+            with c1:
+                model_name = st.selectbox("Model", ["kling-v2-1", "kling-v2-master", "kling-v2-1-master", "kling-v2-5-turbo"])
+            with c2:
+                cfg_scale = st.number_input("CFG Scale", value=0.8, step=0.1)
+            with c3:
+                mode = st.selectbox("Mode", ["std", "pro"])
+            with c4:
+                aspect_ratio = st.selectbox("Aspect Ratio", ["9:16", "16:9", "1:1"])
+            with c5:
+                duration = st.selectbox("Duration", ["5", "10"], index=0)
             
             col_q1, col_q2 = st.columns(2)
             
@@ -388,6 +399,10 @@ with tab_create:
                                 task_id = asyncio.run(comfy_client.generate_video_kling(
                                     prompt=final_prompt,
                                     image_path=st.session_state.selected_video_source,
+                                    model_name=model_name,
+                                    cfg_scale=cfg_scale,
+                                    mode=mode,
+                                    aspect_ratio=aspect_ratio,
                                     duration=duration,
                                     filename_id=filename_id
                                 ))
@@ -422,6 +437,10 @@ with tab_create:
                                     task_id = asyncio.run(comfy_client.generate_video_kling(
                                         prompt=prompt,
                                         image_path=st.session_state.selected_video_source,
+                                        model_name=model_name,
+                                        cfg_scale=cfg_scale,
+                                        mode=mode,
+                                        aspect_ratio=aspect_ratio,
                                         duration=duration,
                                         filename_id=filename_id
                                     ))

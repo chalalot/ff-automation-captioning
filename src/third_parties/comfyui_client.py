@@ -288,6 +288,10 @@ class ComfyUIClient:
         self,
         prompt: str,
         image_path: str,
+        model_name: str = "kling-v2-1",
+        cfg_scale: float = 0.8,
+        mode: str = "std",
+        aspect_ratio: str = "9:16",
         duration: str = "5",
         filename_id: Optional[str] = None
     ) -> str:
@@ -297,6 +301,10 @@ class ComfyUIClient:
         Args:
             prompt: Text prompt
             image_path: Path to input image
+            model_name: Kling model version
+            cfg_scale: CFG scale
+            mode: 'std' or 'pro'
+            aspect_ratio: Aspect ratio string
             duration: "5" or "10"
             filename_id: Optional unique ID for the filename
             
@@ -333,10 +341,10 @@ class ComfyUIClient:
                 "inputs": {
                 "prompt": prompt,
                 "negative_prompt": DEFAULT_NEGATIVE_PROMPT,
-                "model_name": "kling-v2-1",
-                "cfg_scale": 0.8,
-                "mode": "std",
-                "aspect_ratio": "9:16",
+                "model_name": model_name,
+                "cfg_scale": cfg_scale,
+                "mode": mode,
+                "aspect_ratio": aspect_ratio,
                 "duration": duration,
                 "start_frame": [
                     "40",
