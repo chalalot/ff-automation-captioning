@@ -85,18 +85,19 @@ class VideoStoryboardWorkflow:
             llm="gpt-4o"
         )
 
-    def process(self, image_path: str, persona_name: str = "Jennie") -> Dict[str, Any]:
+    def process(self, image_path: str, persona_name: str = "Jennie", var_count: int = 3) -> Dict[str, Any]:
         """
         Run the workflow.
         
         Args:
             image_path: Path to the source image.
             persona_name: Name of the persona for LORA consistency.
+            var_count: Number of variations to generate (default: 3).
             
         Returns:
             Dict containing the list of variations.
         """
-        print(f"\n🎬 Starting Video Variations Workflow for: {image_path} (Persona: {persona_name})")
+        print(f"\n🎬 Starting Video Variations Workflow for: {image_path} (Persona: {persona_name}, Variations: {var_count})")
 
         # Task 1: Analyze Frame 0
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -140,11 +141,15 @@ class VideoStoryboardWorkflow:
              with open(concept_task_path, 'r', encoding='utf-8') as f:
                  concept_task_desc = f.read()
         except:
-             concept_task_desc = "Based on the analysis of the source image, create 3 DISTINCT simple video concepts..." # Fallback
+             concept_task_desc = f"Based on the analysis of the source image, create {var_count} DISTINCT simple video concepts..." # Fallback
+        
+        # Dynamic replacement of '3' with var_count if it exists in the template
+        if "3 " in concept_task_desc:
+             concept_task_desc = concept_task_desc.replace("3 ", f"{var_count} ")
 
         concept_task = Task(
             description=concept_task_desc,
-            expected_output="A list of 3 distinct video concepts/actions.",
+            expected_output=f"A list of {var_count} distinct video concepts/actions.",
             agent=self.concept_ideator,
             context=[analyze_task]
         )
@@ -158,11 +163,19 @@ class VideoStoryboardWorkflow:
              with open(prompt_task_path, 'r', encoding='utf-8') as f:
                  prompt_task_desc = f.read()
         except:
-             prompt_task_desc = "Based on the 3 Concepts and the Visual Analysis..." # Fallback
+             prompt_task_desc = f"Based on the {var_count} Concepts and the Visual Analysis..." # Fallback
 
+        # Dynamic replacement of '3' with var_count
+        if "3 " in prompt_task_desc:
+             prompt_task_desc = prompt_task_desc.replace("3 ", f"{var_count} ")
+        
+        # Also fix example list in description if needed
+        # (Assuming the prompt task description contains an example list of 3 items, we leave it as an example, 
+        # but the main instruction "generate 3 Image Generation Prompts" should be updated)
+        
         prompt_task = Task(
             description=prompt_task_desc,
-            expected_output="A Python list of 3 dictionaries containing variation index, concept name, and image prompt.",
+            expected_output=f"A Python list of {var_count} dictionaries containing variation index, concept name, and image prompt.",
             agent=self.prompt_generator,
             context=[analyze_task, concept_task]
         )
@@ -200,7 +213,7 @@ class VideoStoryboardWorkflow:
             except Exception as e:
                 print(f"Error parsing variations output: {e}")
                 print(f"Raw output: {raw_output}")
-                parsed_variations = [{"variation": i, "concept_name": "Error parsing", "prompt": raw_output} for i in range(1, 4)]
+                parsed_variations = [{"variation": i, "concept_name": "Error parsing", "prompt": raw_output} for i in range(1, var_count + 1)]
 
         # --- Validation & Normalization ---
         final_variations = []
@@ -252,7 +265,7 @@ class VideoStoryboardWorkflow:
                     })
         else:
              # parsed_variations is not a list?
-             final_variations = [{"variation": i, "concept_name": "Error format", "prompt": str(parsed_variations)} for i in range(1, 4)]
+             final_variations = [{"variation": i, "concept_name": "Error format", "prompt": str(parsed_variations)} for i in range(1, var_count + 1)]
         
         parsed_variations = final_variations
 
