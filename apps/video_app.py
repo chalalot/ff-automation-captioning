@@ -58,7 +58,7 @@ with tab_create:
         st.info("Edit Agent Backstories and Task Descriptions for the video workflow.")
         
         # Paths
-        base_workflow_dir = os.path.join(os.path.dirname(__file__), '..', 'src', 'workflows')
+        base_workflow_dir = os.path.join(os.path.dirname(__file__), '..', 'prompts', 'workflows')
         
         # Files
         files = {
@@ -67,7 +67,10 @@ with tab_create:
             "concept_agent": "video_concept_agent.txt",
             "concept_task": "video_concept_task.txt",
             "prompt_agent": "video_prompt_agent.txt",
-            "prompt_task": "video_prompt_task.txt"
+            "prompt_task": "video_prompt_task.txt",
+            "prompt_framework": "video_prompt_framework.txt",
+            "prompt_constraints": "video_prompt_constraints.txt",
+            "prompt_examples": "video_prompt_examples.txt"
         }
         
         def load_content(filename):
@@ -106,10 +109,17 @@ with tab_create:
             c1, c2 = st.columns(2)
             with c1:
                 st.caption("Prompt Agent Backstory")
-                val_pa = st.text_area("Backstory", value=load_content(files["prompt_agent"]), height=300, key="v_pa")
+                val_pa = st.text_area("Backstory", value=load_content(files["prompt_agent"]), height=400, key="v_pa")
             with c2:
-                st.caption("Prompt Generation Task Description")
-                val_pt = st.text_area("Task", value=load_content(files["prompt_task"]), height=300, key="v_pt")
+                st.caption("Prompt Generation Task Template")
+                sub_fw, sub_cs, sub_ex = st.tabs(["Framework", "Constraints", "Examples"])
+                
+                with sub_fw:
+                    val_pf = st.text_area("Framework", value=load_content(files["prompt_framework"]), height=300, key="v_pf", label_visibility="collapsed")
+                with sub_cs:
+                    val_pc = st.text_area("Constraints", value=load_content(files["prompt_constraints"]), height=300, key="v_pc", label_visibility="collapsed")
+                with sub_ex:
+                    val_pe = st.text_area("Examples", value=load_content(files["prompt_examples"]), height=300, key="v_pe", label_visibility="collapsed")
 
         if st.button("Save Video Configuration"):
             try:
@@ -119,7 +129,16 @@ with tab_create:
                 with open(os.path.join(base_workflow_dir, files["concept_agent"]), 'w', encoding='utf-8') as f: f.write(val_ca)
                 with open(os.path.join(base_workflow_dir, files["concept_task"]), 'w', encoding='utf-8') as f: f.write(val_ct)
                 with open(os.path.join(base_workflow_dir, files["prompt_agent"]), 'w', encoding='utf-8') as f: f.write(val_pa)
-                with open(os.path.join(base_workflow_dir, files["prompt_task"]), 'w', encoding='utf-8') as f: f.write(val_pt)
+                
+                # Save components
+                with open(os.path.join(base_workflow_dir, files["prompt_framework"]), 'w', encoding='utf-8') as f: f.write(val_pf)
+                with open(os.path.join(base_workflow_dir, files["prompt_constraints"]), 'w', encoding='utf-8') as f: f.write(val_pc)
+                with open(os.path.join(base_workflow_dir, files["prompt_examples"]), 'w', encoding='utf-8') as f: f.write(val_pe)
+                
+                # Compile prompt task
+                compiled_task = val_pf + "\n\n" + val_pc + "\n\n" + val_pe
+                with open(os.path.join(base_workflow_dir, files["prompt_task"]), 'w', encoding='utf-8') as f: f.write(compiled_task)
+                
                 st.success("✅ Configuration saved!")
             except Exception as e:
                 st.error(f"Failed to save: {e}")
