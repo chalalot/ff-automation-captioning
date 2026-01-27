@@ -39,6 +39,9 @@ class VisionTool(BaseTool):
             self.description = f"A tool that uses {self.model_name} to analyze the SPECIFIC image currently being processed. It takes a prompt and returns a text description."
 
     def _run(self, prompt: str, image_path: Optional[str] = None) -> str:
+        # Debug Print for User
+        print(f"DEBUG: VisionTool called with image_path='{image_path}', fixed='{self.fixed_image_path}'")
+
         # Determine effective image path
         effective_path = self.fixed_image_path or image_path
         

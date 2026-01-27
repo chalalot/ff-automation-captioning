@@ -110,7 +110,13 @@ class VideoStoryboardWorkflow:
              analyst_task_template = "Analyze the source image at: {image_path}..." # Fallback
 
         safe_image_path = Path(image_path).resolve().as_posix()
-        analyst_task_desc = analyst_task_template.format(image_path=f'"{safe_image_path}"')
+        try:
+            analyst_task_desc = analyst_task_template.format(image_path=f'"{safe_image_path}"')
+        except Exception as e:
+            print(f"DEBUG: Error formatting analyst task template: {e}")
+            analyst_task_desc = f"Analyze the source image at: \"{safe_image_path}\""
+
+        print(f"DEBUG: Analyst Task Description:\n{analyst_task_desc}")
 
         analyze_task = Task(
             description=analyst_task_desc,

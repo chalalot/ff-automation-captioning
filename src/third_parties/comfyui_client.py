@@ -72,7 +72,7 @@ PERSONA_LORA_MAPPING_TURBO = {
     "Jennie": "z-image-persona/jennie_turbo_v3.safetensors",
     "Sephera": "z-image-persona/sephera_turbo_v2.safetensors",
     "Nya": "z-image-persona/nya-z-image-turbo-v1.safetensors",
-    "Emi": "z-image-persona/emi-z-image-turbo-v1_copy_copy_copy.safetensors",
+    "Emi": "z-image-persona/emi_turbo_v1.safetensors",
     "Roxie": "z-image-persona/roxie_turbo_v2.safetensors"
 }
 
