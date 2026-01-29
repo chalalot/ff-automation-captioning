@@ -10,27 +10,27 @@ The **Results Gallery** is a Streamlit-based application designed to manage, vie
     *   It reads the `OUTPUT_DIR` from the global configuration.
 
 2.  **Data Loading (`load_gallery_data`)**:
-    *   **DB Query**: Fetches all completed execution records from the local SQLite database to retrieve metadata like "Persona" and "Execution ID".
-    *   **File Scan**: Scans the `OUTPUT_DIR` for image files (`.png`, `.jpg`, etc.).
+    *   **DB Query**: Fetches all completed execution records from the database to retrieve metadata like "Persona" and "Execution ID".
+    *   **File Scan**: Scans the `OUTPUT_DIR` for image files.
     *   **Merge**: matches physical files with their database records based on filenames.
 
 3.  **User Interface (Streamlit)**:
-    *   **Filtering**: Users can filter images by "Persona" (e.g., Jennie, Mika) or sort by date.
-    *   **Grid View**: Displays images in a responsive grid.
-    *   **Metadata**: On hovering or clicking "View Metadata", the app reads the image file header (using Pillow) to extract ComfyUI metadata (Seed, Prompt) and displays database records.
+    *   **Fragments**: Uses `st.fragment` to efficiently update the grid and pagination without reloading the entire page.
+    *   **Filtering & Grouping**: Users can filter images by "Persona", sort by date, or toggle "Group by Date" view.
+    *   **Metadata**: On hovering or clicking "View Metadata", the app reads the image file header (using Pillow) and database records. It can also fetch **remote details** directly from the ComfyUI history API.
 
 4.  **Actions**:
     *   **Selection**: Users select images to build a batch.
-    *   **Download**: The app zips selected images (optionally including a `.txt` file with metadata for each) and provides a download link.
-    *   **Approval**: Toggles an "Approved" state stored in a local JSON file (`approvals.json`) to mark high-quality outputs.
-    *   **Maintenance**: "Delete Unused" compares the file list against the "Approved" list to bulk-delete rejected images.
+    *   **Download**: The app zips selected images (including metadata text files). It can asynchronously fetch the full original prompt from ComfyUI if missing locally.
+    *   **Approval**: Toggles an "Approved" state stored in a local JSON file (`approvals.json`).
+    *   **Maintenance**: "Delete All Unused" compares the file list against the "Approved" list to bulk-delete rejected images.
 
 ## Functions/Features
 
-*   **Gallery Grid**: Responsive grid layout with pagination to browse large collections of generated images.
-*   **Metadata Inspector**: Extracts and displays hidden metadata from generated images, including the exact prompt and seed used by ComfyUI.
+*   **Gallery Grid**: Responsive grid layout with pagination and Date Grouping.
+*   **Metadata Inspector**: Extracts and displays hidden metadata (Seed, Prompt) from images. Includes a "Fetch Remote Details" button to query the live ComfyUI server for execution stats.
 *   **Persona Filtering**: Filter results by the specific AI persona used during generation.
-*   **Batch Download**: Select multiple images and download them as a single ZIP archive. Includes options to export prompts as text files.
+*   **Batch Download**: Select multiple images and download them as a single ZIP archive, with options to include full metadata files.
 *   **Approval System**: "Like/Approve" images to persist a curated list of favorites.
 *   **Maintenance Tools**: One-click cleanup to delete all images that haven't been approved/curated.
 *   **Reference Image**: Displays the source/reference image used (if applicable) alongside the result.
@@ -47,13 +47,12 @@ The **Results Gallery** is a Streamlit-based application designed to manage, vie
 *   **Container**: Docker container based on `python:3.11-slim`.
 *   **Service Name**: `gallery` (in `docker-compose.yml`).
 *   **Port**: Exposed on port **8502** (mapped from container port 8501).
-*   **Volumes**: Mounts the local `results/` directory to `/app/results` to ensure file persistence.
+*   **Volumes**: Mounts `results/`, `Sorted/`, `processed/`, and databases.
 
 ## Secrets/Keys
 
-This application primarily relies on local file access and the SQLite database.
-*   `DB_*` (DB_HOST, DB_USER, etc.) - For connecting to the logs database (if externalized).
-*   `GCS_*` - (Optional) If remote metadata fetching or future cloud sync is enabled.
+*   `COMFYUI_API_URL`: Required for fetching detailed execution history from the generation server.
+*   `DB_URL`: Connection string for the logs database (SQLite or Postgres).
 
 ## Development Environment
 

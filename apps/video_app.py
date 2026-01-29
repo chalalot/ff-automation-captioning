@@ -154,7 +154,7 @@ with tab_create:
         if recent_executions:
             df = pd.DataFrame(recent_executions)
             cols_to_show = ['id', 'execution_id', 'status', 'created_at', 'prompt']
-            st.dataframe(df[cols_to_show], use_container_width=True)
+            st.dataframe(df[cols_to_show], width="stretch")
             if st.button("Refresh History"):
                 st.rerun()
         else:
@@ -502,7 +502,10 @@ with tab_create:
         for i, vp in enumerate(st.session_state.videos_to_merge):
             with c_m[i % 3]:
                 is_sel = st.checkbox(f"Merge {i+1}", value=True, key=f"merge_sel_{i}")
-                st.video(vp)
+                if os.path.exists(vp):
+                    st.video(vp)
+                else:
+                    st.caption(f"Missing: {os.path.basename(vp)}")
                 if is_sel:
                     selected_for_merge.append(vp)
         
@@ -525,7 +528,9 @@ with tab_create:
                          for vp in st.session_state.videos_to_merge:
                              try: os.remove(vp)
                              except: pass
+                         st.session_state.videos_to_merge = []
                          st.success("Cleaned up raw files.")
+                         st.rerun()
                          
                 except Exception as e:
                     st.error(f"Merge failed: {e}")
