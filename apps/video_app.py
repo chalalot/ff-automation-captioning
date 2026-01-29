@@ -305,9 +305,10 @@ with tab_create:
         st.write(f"Starting Batch: `{batch_id}`")
         
         # Create Logger
-        with st.expander("Processing Logs", expanded=True):
-            log_placeholder = st.empty()
-            logger = StreamlitLogger(log_placeholder)
+        with st.expander("Processing Logs", expanded=False):
+            with st.container(height=400):
+                log_placeholder = st.empty()
+                logger = StreamlitLogger(log_placeholder)
             
             progress_bar = st.progress(0)
             
@@ -385,60 +386,77 @@ with tab_create:
         
         # Check Status Button
         if st.button("🔄 Check Status Now"):
-            with st.spinner("Checking status..."):
-                raw_video_dir = os.path.join(OUTPUT_DIR, "video-raw")
-                os.makedirs(raw_video_dir, exist_ok=True)
-                
-                for task_id in st.session_state.batch_task_ids:
-                    # Logic similar to original, but one-pass
+            with st.expander("Status Logs", expanded=True):
+                with st.container(height=300):
+                    status_log_placeholder = st.empty()
+                    status_logger = StreamlitLogger(status_log_placeholder)
                     
-                    # 1. Get DB Record
-                    db_rec = video_storage.get_execution(task_id)
-                    local_path = db_rec.get('video_output_path')
-                    status = db_rec.get('status')
-                    filename_id = db_rec.get('filename_id')
-                    
-                    if status == 'completed' and local_path and os.path.exists(local_path):
-                        st.session_state.batch_status_map[task_id] = {'status': 'completed', 'path': local_path}
-                        continue
-                    
-                    # 2. Check Remote
-                    try:
-                        res = asyncio.run(comfy_client.check_status_local(task_id))
-                        r_status = res.get("status")
-                        
-                        if r_status == "succeed":
-                            # Download
-                            if filename_id:
-                                fname = f"ComfyUI-{filename_id}.mp4"
-                            else:
-                                fname = res.get("filename") or f"ComfyUI-{task_id}.mp4"
+                    with contextlib.redirect_stdout(status_logger):
+                        with st.spinner("Checking status..."):
+                            raw_video_dir = os.path.join(OUTPUT_DIR, "video-raw")
+                            os.makedirs(raw_video_dir, exist_ok=True)
                             
-                            gcs_name = f"outputs/{fname}"
-                            l_path = os.path.join(raw_video_dir, fname)
-                            
-                            # Check GCS/Download
-                            if check_blob_exists(gcs_name):
-                                if not os.path.exists(l_path) or os.path.getsize(l_path) == 0:
-                                    download_blob_to_file(gcs_name, l_path)
+                            for task_id in st.session_state.batch_task_ids:
+                                print(f"Checking Task: {task_id}")
+                                # Logic similar to original, but one-pass
                                 
-                                if os.path.exists(l_path) and os.path.getsize(l_path) > 0:
-                                    video_storage.update_result(task_id, l_path, 'completed')
-                                    st.session_state.batch_status_map[task_id] = {'status': 'completed', 'path': l_path}
-                                else:
-                                    st.session_state.batch_status_map[task_id] = {'status': 'download_failed'}
-                            else:
-                                st.session_state.batch_status_map[task_id] = {'status': 'uploading_to_gcs'}
+                                # 1. Get DB Record
+                                db_rec = video_storage.get_execution(task_id)
+                                local_path = db_rec.get('video_output_path')
+                                status = db_rec.get('status')
+                                filename_id = db_rec.get('filename_id')
                                 
-                        elif r_status == "failed":
-                             video_storage.update_result(task_id, status='failed')
-                             st.session_state.batch_status_map[task_id] = {'status': 'failed'}
-                        else:
-                             st.session_state.batch_status_map[task_id] = {'status': 'running'}
-                             
-                    except Exception as e:
-                        print(f"Error checking {task_id}: {e}")
-                        st.session_state.batch_status_map[task_id] = {'status': 'error'}
+                                if status == 'completed' and local_path and os.path.exists(local_path):
+                                    print(f"  - Already completed locally: {local_path}")
+                                    st.session_state.batch_status_map[task_id] = {'status': 'completed', 'path': local_path}
+                                    continue
+                                
+                                # 2. Check Remote
+                                try:
+                                    res = asyncio.run(comfy_client.check_status_local(task_id))
+                                    r_status = res.get("status")
+                                    print(f"  - Remote Status: {r_status}")
+                                    if r_status == 'failed':
+                                        print(f"  - Details: {res}")
+                                    
+                                    if r_status == "succeed":
+                                        # Download
+                                        if filename_id:
+                                            fname = f"ComfyUI-{filename_id}.mp4"
+                                        else:
+                                            fname = res.get("filename") or f"ComfyUI-{task_id}.mp4"
+                                        
+                                        gcs_name = f"outputs/{fname}"
+                                        l_path = os.path.join(raw_video_dir, fname)
+                                        print(f"  - GCS File: {gcs_name}")
+                                        
+                                        # Check GCS/Download
+                                        if check_blob_exists(gcs_name):
+                                            print(f"  - Found in GCS, downloading...")
+                                            if not os.path.exists(l_path) or os.path.getsize(l_path) == 0:
+                                                download_blob_to_file(gcs_name, l_path)
+                                            
+                                            if os.path.exists(l_path) and os.path.getsize(l_path) > 0:
+                                                print(f"  - Download success: {l_path}")
+                                                video_storage.update_result(task_id, l_path, 'completed')
+                                                st.session_state.batch_status_map[task_id] = {'status': 'completed', 'path': l_path}
+                                            else:
+                                                print(f"  - Download failed or empty file")
+                                                st.session_state.batch_status_map[task_id] = {'status': 'download_failed'}
+                                        else:
+                                            print(f"  - Not found in GCS yet (uploading?)")
+                                            st.session_state.batch_status_map[task_id] = {'status': 'uploading_to_gcs'}
+                                            
+                                    elif r_status == "failed":
+                                         print(f"  - Task failed on server")
+                                         video_storage.update_result(task_id, status='failed')
+                                         st.session_state.batch_status_map[task_id] = {'status': 'failed'}
+                                    else:
+                                         st.session_state.batch_status_map[task_id] = {'status': 'running'}
+                                         
+                                except Exception as e:
+                                    print(f"Error checking {task_id}: {e}")
+                                    st.session_state.batch_status_map[task_id] = {'status': 'error'}
 
         # Display Grid
         tasks = st.session_state.batch_task_ids

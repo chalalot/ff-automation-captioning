@@ -397,6 +397,7 @@ class ComfyUIClient:
             payload["extra_data"]["api_key_comfy_org"] = self.api_key
             
         logger.info(f"🔵 Queueing Kling Video at {url}")
+        print(f"DEBUG PAYLOAD TO COMFYUI:\n{json.dumps(payload, indent=2)}")
         
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
