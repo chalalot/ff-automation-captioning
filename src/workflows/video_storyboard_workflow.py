@@ -269,45 +269,6 @@ class VideoStoryboardWorkflow:
         
         parsed_variations = final_variations
 
-        # --- Prompt Length Validation & Regeneration ---
-        print("\nChecking prompt lengths...")
-        for i, item in enumerate(parsed_variations):
-            prompt = item.get('prompt', '')
-            if len(prompt) > 500:
-                print(f"⚠️ Prompt {item.get('variation')} is too long ({len(prompt)} chars). Regenerating...")
-                
-                correction_description = (
-                    f"The following video generation prompt is too long ({len(prompt)} characters). "
-                    f"It MUST be strictly under 500 characters while preserving the key visual details and action.\n\n"
-                    f"ORIGINAL PROMPT:\n{prompt}\n\n"
-                    f"Please rewrite it to be concise (under 500 chars)."
-                )
-                
-                correction_task = Task(
-                    description=correction_description,
-                    expected_output="A single shortened prompt string under 500 characters.",
-                    agent=self.prompt_generator
-                )
-                
-                # Create a mini crew for correction
-                correction_crew = Crew(
-                    agents=[self.prompt_generator],
-                    tasks=[correction_task],
-                    verbose=self.verbose
-                )
-                
-                try:
-                    corrected_result = correction_crew.kickoff()
-                    corrected_prompt = str(corrected_result).strip()
-                    
-                    # Remove quotes if agent added them
-                    if corrected_prompt.startswith('"') and corrected_prompt.endswith('"'):
-                        corrected_prompt = corrected_prompt[1:-1]
-                        
-                    print(f"✅ Corrected Prompt: {len(corrected_prompt)} chars.")
-                    item['prompt'] = corrected_prompt
-                except Exception as e:
-                    print(f"❌ Failed to regenerate prompt: {e}")
 
         return {
             "source_image": image_path,
