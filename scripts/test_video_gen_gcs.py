@@ -1,4 +1,3 @@
-import asyncio
 import os
 import sys
 import time
@@ -6,18 +5,10 @@ import time
 # Add src to path
 sys.path.append(os.getcwd())
 
-from src.third_parties.comfyui_client import ComfyUIClient
+from src.third_parties.kling_client import KlingClient
 
-# Try importing GCS client, but don't fail if missing
-try:
-    from src.third_parties.gcs_client import check_blob_exists, download_blob_to_file
-    GCS_AVAILABLE = True
-except ImportError:
-    print("Warning: GCS Client not available (missing google-cloud-storage?). Skipping GCS check.")
-    GCS_AVAILABLE = False
-
-async def main():
-    print("Initializing ComfyUI Client...")
+def main():
+    print("Initializing Kling Client...")
     try:
         # Load env vars if needed (dotenv)
         try:
@@ -26,13 +17,13 @@ async def main():
         except ImportError:
             pass
         
-        client = ComfyUIClient()
+        client = KlingClient()
     except Exception as e:
         print(f"Failed to init client: {e}")
         return
 
     # Image path - try to find a real one or use dummy
-    image_path = "results/result_ref_1766634154_d875e649.png"
+    image_path = "results/test_image.png"
     if not os.path.exists(image_path):
         if os.path.exists("results"):
             files = [f for f in os.listdir("results") if f.endswith(".png")]
@@ -42,55 +33,54 @@ async def main():
             else:
                 # Create dummy
                 os.makedirs("results", exist_ok=True)
-                with open(image_path, "wb") as f:
-                    f.write(b"dummy content")
-                print(f"Created dummy image at {image_path}")
-        else:
-             os.makedirs("results", exist_ok=True)
-             with open(image_path, "wb") as f:
-                 f.write(b"dummy content")
-             print(f"Created dummy image at {image_path}")
+                # Create a simple colored square using PIL if possible, else just bytes
+                try:
+                    from PIL import Image
+                    img = Image.new('RGB', (100, 100), color = 'red')
+                    img.save(image_path)
+                    print(f"Created dummy image at {image_path}")
+                except:
+                     with open(image_path, "wb") as f:
+                         f.write(b"dummy content")
+                     print(f"Created dummy image (bytes) at {image_path}")
 
-    prompt = "A test video generation prompt"
+    prompt = "A cinematic shot of a warrior standing in the rain"
     
     print(f"Queueing video generation for {image_path}...")
     try:
-        task_id = await client.generate_video_kling(
+        task_id = client.generate_video(
             prompt=prompt,
-            image_path=image_path,
+            image=image_path,
             duration="5"
         )
         print(f"✅ Task queued successfully!")
-        print(f"🆔 Prompt ID: {task_id}")
+        print(f"🆔 Task ID: {task_id}")
     except Exception as e:
         print(f"❌ Failed to queue task: {e}")
         return
 
-    # Poll for completion using PROMPT ID
-    print(f"Polling ComfyUI for completion using Prompt ID {task_id}...")
+    # Poll for completion
+    print(f"Polling Kling for completion using Task ID {task_id}...")
     
-    max_retries = 60 # 10 mins
+    max_retries = 60 # 10 mins (assuming 10s sleep)
     for i in range(max_retries):
         try:
-            status_res = await client.check_status_local(task_id)
-            status = status_res.get("status")
+            status_res = client.get_video_status(task_id)
+            status = status_res.get("task_status")
             
             if status == "succeed":
                 print(f"✅ Task Completed!")
-                filename = status_res.get("filename")
-                print(f"📄 Filename reported by ComfyUI: {filename}")
+                video_url = status_res.get("video_url")
+                print(f"🔗 Video URL: {video_url}")
                 
-                if GCS_AVAILABLE:
-                    gcs_blob_name = f"outputs/{filename}"
-                    print(f"🔍 Checking GCS for: {gcs_blob_name}")
-                    if check_blob_exists(gcs_blob_name):
-                        print("✅ File found on GCS!")
-                    else:
-                        print("⚠️ File NOT found on GCS (yet?).")
+                # Download
+                output_path = f"results/kling_test_{task_id}.mp4"
+                client.download_video(video_url, output_path)
+                print(f"⬇️ Downloaded to: {output_path}")
                 return
                 
             elif status == "failed":
-                print(f"❌ Task Failed: {status_res.get('message')}")
+                print(f"❌ Task Failed: {status_res}")
                 return
             
             else:
@@ -99,9 +89,9 @@ async def main():
         except Exception as e:
             print(f"Error checking status: {e}")
             
-        await asyncio.sleep(10)
+        time.sleep(10)
 
     print("Timeout waiting for video.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

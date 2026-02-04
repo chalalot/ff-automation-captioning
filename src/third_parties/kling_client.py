@@ -4,7 +4,7 @@ import requests
 import logging
 import base64
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Union
 from src.config import GlobalConfig
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,7 @@ class KlingClient:
                 
                 if data.get("code") != 0:
                      # Kling specific error codes
-                     raise Exception(f"Kling API Error: {data.get('message')}")
+                     raise Exception(f"Kling API Error: {data.get('message')} (Code: {data.get('code')})")
                 
                 return data
 
@@ -86,40 +86,97 @@ class KlingClient:
                      pass
                 raise e
 
-    def generate_video(self, prompt: str, image: str, model_name: str = "kling-v1", duration: str = "5") -> str:
+    def generate_video(
+        self, 
+        prompt: str, 
+        image: str, 
+        model_name: str = "kling-v1.6", 
+        negative_prompt: Optional[str] = None,
+        duration: str = "5",
+        aspect_ratio: str = "16:9",
+        cfg_scale: float = 0.5,
+        mode: str = "std",
+        camera_control: Optional[Dict[str, Any]] = None,
+        image_tail: Optional[str] = None,
+        sound: Optional[str] = None,
+        voice_list: Optional[List[str]] = None,
+        callback_url: Optional[str] = None
+    ) -> str:
         """
         Queue a video generation task.
         
         Args:
-            prompt: Text prompt.
-            image: Image URL or Base64 string.
-            model_name: "kling-v1", "kling-v1-5", "kling-v1-6".
+            prompt: Text prompt description.
+            image: Source image (URL or local path).
+            model_name: Model version (e.g., "kling-v1.6", "kling-v2.0").
+            negative_prompt: What to avoid.
             duration: "5" or "10".
+            aspect_ratio: "16:9", "9:16", "1:1", etc.
+            cfg_scale: Guidance scale (0.0 to 1.0).
+            mode: "std" (Standard) or "pro" (Professional).
+            camera_control: Dict for camera movements.
+            image_tail: End frame image (URL or local path).
+            sound: "on" or "off".
+            voice_list: List of voice IDs.
+            callback_url: Webhook URL.
             
         Returns:
             task_id: The ID of the queued task.
         """
-        url = f"{self.BASE_URL}/videos/image2video"
+        endpoint = "/videos/image2video"
+        url = f"{self.BASE_URL}{endpoint}"
         
-        # If image is a local path, convert to base64
-        if os.path.exists(image):
-            with open(image, "rb") as f:
-                encoded_string = base64.b64encode(f.read()).decode('utf-8')
-                image = encoded_string # Kling accepts base64 string directly
+        # Helper to process image input
+        def process_image_input(img_input):
+            if img_input and os.path.exists(img_input):
+                try:
+                    with open(img_input, "rb") as f:
+                        return base64.b64encode(f.read()).decode('utf-8')
+                except Exception as e:
+                    logger.error(f"Failed to read/encode image file {img_input}: {e}")
+                    raise
+            return img_input
+
+        processed_image = process_image_input(image)
+        processed_tail = process_image_input(image_tail) if image_tail else None
         
         payload = {
             "model_name": model_name,
-            "image": image,
+            "image": processed_image,
             "prompt": prompt,
-            "duration": duration
+            "duration": duration,
+            "aspect_ratio": aspect_ratio,
+            "cfg_scale": cfg_scale,
+            "mode": mode
         }
+        
+        if negative_prompt:
+            payload["negative_prompt"] = negative_prompt
+            
+        if processed_tail:
+            payload["image_tail"] = processed_tail
+            
+        # Add camera_control only if not conflicting with image_tail
+        if camera_control and not processed_tail:
+             payload["camera_control"] = camera_control
+            
+        if sound:
+            payload["sound"] = sound
+            
+        if voice_list:
+            payload["voice_list"] = voice_list
+            
+        if callback_url:
+            payload["callback_url"] = callback_url
+        
+        logger.info(f"Queueing Kling Video: Model={model_name}, Mode={mode}, Duration={duration}s")
         
         try:
             data = self._make_request("POST", url, json=payload)
             
             task_id = data.get("data", {}).get("task_id")
             if not task_id:
-                raise Exception("No task_id in response")
+                raise Exception(f"No task_id in response: {data}")
                 
             return task_id
             
@@ -135,10 +192,12 @@ class KlingClient:
             Dict with status and result url (if succeed).
             {
                 "task_status": "succeed" | "processing" | "submitted" | "failed",
-                "video_url": "..." (if succeed)
+                "video_url": "..." (if succeed),
+                ...
             }
         """
-        url = f"{self.BASE_URL}/videos/image2video/{task_id}"
+        endpoint = f"/videos/image2video/{task_id}"
+        url = f"{self.BASE_URL}{endpoint}"
         
         try:
             data = self._make_request("GET", url)
@@ -151,6 +210,8 @@ class KlingClient:
                 videos = task_data.get("task_result", {}).get("videos", [])
                 if videos:
                     result["video_url"] = videos[0].get("url")
+                    result["duration"] = videos[0].get("duration")
+                    result["id"] = videos[0].get("id")
             
             return result
             

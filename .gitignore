@@ -8,5 +8,5 @@ image_logs.db
 soulie-gcp-bucket.json
 prompts/
 video-raw/
-
+docker-compose.yml
 *.mp4

@@ -1,4 +1,3 @@
-import asyncio
 import os
 import sys
 import uuid
@@ -7,16 +6,15 @@ import time
 # Add src to path
 sys.path.append(os.getcwd())
 
-from src.third_parties.comfyui_client import ComfyUIClient
-from src.third_parties.gcs_client import check_blob_exists, download_blob_to_file
+from src.third_parties.kling_client import KlingClient
 
-async def main():
-    print("🚀 Initializing Test...")
+def main():
+    print("🚀 Initializing Kling Verification Test...")
     
     try:
         from dotenv import load_dotenv
         load_dotenv()
-        client = ComfyUIClient()
+        client = KlingClient()
     except Exception as e:
         print(f"Failed to init client: {e}")
         return
@@ -30,27 +28,30 @@ async def main():
             if files:
                 image_path = os.path.join("results", files[0])
     
+    if not os.path.exists(image_path):
+        # Create dummy
+        os.makedirs("results", exist_ok=True)
+        with open(image_path, "wb") as f:
+            f.write(b"dummy")
+            
     print(f"📸 Using image: {image_path}")
 
     # Params
     prompt = "A cinematic test video of a cat running, 4k"
     filename_id = str(uuid.uuid4())
-    expected_filename = f"ComfyUI-{filename_id}.mp4"
-    gcs_blob_name = f"outputs/{expected_filename}"
+    expected_filename = f"Kling-{filename_id}.mp4"
     
     print(f"🆔 Generated Filename ID: {filename_id}")
-    print(f"📄 Expected Filename: {expected_filename}")
-    print(f"☁️  Expected GCS Path: {gcs_blob_name}")
+    print(f"📄 Expected Output Filename: {expected_filename}")
     
     # 1. Queue Task
     print("-" * 50)
     print("1️⃣  Queueing Task...")
     try:
-        task_id = await client.generate_video_kling(
+        task_id = client.generate_video(
             prompt=prompt,
-            image_path=image_path,
-            duration="5",
-            filename_id=filename_id
+            image=image_path,
+            duration="5"
         )
         print(f"✅ Queued! Task ID: {task_id}")
     except Exception as e:
@@ -65,18 +66,35 @@ async def main():
     max_retries = 90 
     for i in range(max_retries):
         try:
-            status_res = await client.check_status_local(task_id)
-            status = status_res.get("status")
+            status_res = client.get_video_status(task_id)
+            status = status_res.get("task_status")
             
             if status == "succeed":
-                print(f"✅ ComfyUI reports SUCCEED!")
-                # Log what ComfyUI returned
-                print(f"   Returned Filename: {status_res.get('filename')}")
-                print(f"   Returned URL: {status_res.get('video_url')}")
+                print(f"✅ Kling reports SUCCEED!")
+                video_url = status_res.get("video_url")
+                print(f"   URL: {video_url}")
+                
+                # 3. Download
+                print("-" * 50)
+                print("3️⃣  Testing Download...")
+                local_out = f"results/{expected_filename}"
+                os.makedirs("results", exist_ok=True)
+                
+                try:
+                    client.download_video(video_url, local_out)
+                    if os.path.exists(local_out) and os.path.getsize(local_out) > 0:
+                        print(f"✅ Download Successful: {local_out}")
+                        print(f"   Size: {os.path.getsize(local_out)} bytes")
+                        print("\n🎉 VERIFICATION PASSED: File retrieved.")
+                    else:
+                        print("❌ Download failed (file missing or empty).")
+                except Exception as e:
+                    print(f"❌ Download Exception: {e}")
+                
                 break
                 
             elif status == "failed":
-                print(f"❌ Task Failed: {status_res.get('message')}")
+                print(f"❌ Task Failed: {status_res}")
                 return
             
             else:
@@ -85,45 +103,10 @@ async def main():
         except Exception as e:
             print(f"⚠️  Error checking status: {e}")
             
-        await asyncio.sleep(10)
-    else:
-        print("❌ Timeout waiting for ComfyUI.")
-        return
-
-    # 3. Verify GCS
-    print("-" * 50)
-    print("3️⃣  Verifying GCS Upload...")
-    
-    # Wait loop for GCS (upload might lag slightly)
-    found = False
-    for i in range(12): # 2 minutes wait
-        if check_blob_exists(gcs_blob_name):
-            print(f"✅ FOUND in GCS: {gcs_blob_name}")
-            found = True
-            break
-        print(f"   Waiting for GCS appearance... ({i+1}/12)")
         time.sleep(10)
-        
-    if not found:
-        print(f"❌ FILE NOT FOUND in GCS after wait: {gcs_blob_name}")
+    else:
+        print("❌ Timeout waiting for Kling.")
         return
-
-    # 4. Download
-    print("-" * 50)
-    print("4️⃣  Testing Download...")
-    local_out = f"video-raw/{expected_filename}"
-    os.makedirs("video-raw", exist_ok=True)
-    
-    try:
-        download_blob_to_file(gcs_blob_name, local_out)
-        if os.path.exists(local_out) and os.path.getsize(local_out) > 0:
-            print(f"✅ Download Successful: {local_out}")
-            print(f"   Size: {os.path.getsize(local_out)} bytes")
-            print("\n🎉 VERIFICATION PASSED: Correct ID used and file retrieved.")
-        else:
-            print("❌ Download failed (file missing or empty).")
-    except Exception as e:
-        print(f"❌ Download Exception: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

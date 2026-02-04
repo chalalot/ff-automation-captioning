@@ -8,6 +8,7 @@ import requests
 import uuid
 import time
 import shutil
+import json
 
 # Path setup
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -18,7 +19,7 @@ from src.utils.streamlit_utils import get_sorted_images, StreamlitLogger
 from src.database.video_logs_storage import VideoLogsStorage
 from src.third_parties.gcs_client import check_blob_exists, download_blob_to_file
 from scripts.merge_videos_test import merge_videos
-from src.third_parties.comfyui_client import ComfyUIClient
+from src.third_parties.kling_client import KlingClient
 
 # Initialize Storage
 video_storage = VideoLogsStorage()
@@ -32,9 +33,8 @@ st.title("🎬 Video Storyboard & Generation")
 INPUT_DIR = GlobalConfig.INPUT_DIR
 OUTPUT_DIR = GlobalConfig.OUTPUT_DIR
 
-# Sidebar Configuration for Persona
-st.sidebar.header("Configuration")
-kol_persona = st.sidebar.selectbox("KOL Persona", ["Jennie", "Sephera", "Mika", "Nya", "Emi", "Roxie"])
+# Sidebar Configuration for Persona (Removed)
+kol_persona = "Jennie"
 
 st.markdown("Select source images, configure variation counts, and queue for video generation.")
 
@@ -261,52 +261,19 @@ with tab_create:
                             st.rerun()
                     st.divider()
 
-    # --- 2. Process & Queue ---
-    st.subheader("2. Process & Queue")
-    
-    # Configuration
-    with st.expander("Kling/ComfyUI Settings", expanded=False):
-        c1, c2, c3, c4, c5 = st.columns(5)
-        with c1:
-            model_name = st.selectbox("Model", ["kling-v2-1", "kling-v2-master", "kling-v2-1-master", "kling-v2-5-turbo"])
-        with c2:
-            cfg_scale = st.number_input("CFG Scale", value=0.8, step=0.1)
-        with c3:
-            mode = st.selectbox("Mode", ["std", "pro"])
-        with c4:
-            aspect_ratio = st.selectbox("Aspect Ratio", ["9:16", "16:9", "1:1"])
-        with c5:
-            duration = st.selectbox("Duration", ["5", "10"], index=0)
+    # --- 2. Process: Generate & Edit Prompts ---
+    st.subheader("2. Generate & Edit Prompts")
 
-    # Initialize Comfy Client
-    try:
-        comfy_client = ComfyUIClient()
-        client_available = True
-    except Exception as e:
-        st.error(f"Failed to initialize ComfyUI Client: {e}")
-        client_available = False
+    # Initialize Prompt State
+    if "generated_prompts" not in st.session_state:
+        st.session_state.generated_prompts = {} # { item_id: {path:..., result:...} }
 
-    # Initialize Batch State
-    if "batch_task_ids" not in st.session_state:
-        st.session_state.batch_task_ids = []
-    if "batch_id" not in st.session_state:
-        st.session_state.batch_id = None
-    if "batch_status_map" not in st.session_state:
-        st.session_state.batch_status_map = {} # {task_id: {'status':..., 'path':...}}
-
-    if st.button("🚀 Process & Queue All Items", disabled=(not st.session_state.selection_queue or not client_available)):
-        
-        # New Batch
-        batch_id = str(uuid.uuid4())
-        st.session_state.batch_id = batch_id
-        st.session_state.batch_task_ids = []
-        st.session_state.batch_status_map = {}
-        
-        st.write(f"Starting Batch: `{batch_id}`")
+    if st.button("✨ Generate Prompts", disabled=not st.session_state.selection_queue):
+        st.session_state.generated_prompts = {}
         
         # Create Logger
-        with st.expander("Processing Logs", expanded=False):
-            with st.container(height=400):
+        with st.expander("Generation Logs", expanded=True):
+            with st.container(height=300):
                 log_placeholder = st.empty()
                 logger = StreamlitLogger(log_placeholder)
             
@@ -318,147 +285,297 @@ with tab_create:
                 for img_idx, item in enumerate(st.session_state.selection_queue):
                     print(f"\nProcessing Image {img_idx+1}/{total_items}: {os.path.basename(item['path'])}")
                     
-                    # 1. Run Storyboard Workflow
                     try:
                         workflow = VideoStoryboardWorkflow(verbose=True)
                         result = workflow.process(item['path'], kol_persona, var_count=item['var_count'])
                         
-                        variations = result.get("variations", [])
-                        print(f"Generated {len(variations)} prompts.")
+                        # Store result keyed by item ID
+                        st.session_state.generated_prompts[item['id']] = {
+                            'path': item['path'],
+                            'result': result,
+                            'variations': result.get("variations", [])
+                        }
+                        print(f"Generated {len(result.get('variations', []))} prompts.")
                         
-                        # 2. Queue Videos
-                        for v_idx, var in enumerate(variations):
-                            prompt = var.get("prompt")
-                            try:
-                                filename_id = str(uuid.uuid4())
-                                print(f"Queueing Variation {v_idx+1}...")
-                                task_id = asyncio.run(comfy_client.generate_video_kling(
-                                    prompt=prompt,
-                                    image_path=item['path'],
-                                    model_name=model_name,
-                                    cfg_scale=cfg_scale,
-                                    mode=mode,
-                                    aspect_ratio=aspect_ratio,
-                                    duration=duration,
-                                    filename_id=filename_id
-                                ))
-                                
-                                # Log to DB
-                                video_storage.log_execution(
-                                    task_id, prompt, item['path'], 
-                                    batch_id=batch_id, filename_id=filename_id
-                                )
-                                
-                                st.session_state.batch_task_ids.append(task_id)
-                                st.session_state.batch_status_map[task_id] = {'status': 'pending'}
-                                print(f"Queued Task: {task_id}")
-                                
-                            except Exception as e:
-                                print(f"Error queueing variation {v_idx+1}: {e}")
-                                
                     except Exception as e:
                         print(f"Error processing image workflow: {e}")
-                        
+                    
                     progress_bar.progress((img_idx + 1) / total_items)
+        st.success("Prompts Generated! Review them below.")
+
+    # Display & Edit Prompts
+    if st.session_state.generated_prompts:
+        st.markdown("### Review Prompts")
+        for item_id, data in st.session_state.generated_prompts.items():
+            with st.expander(f"Prompts for: {os.path.basename(data['path'])}", expanded=True):
+                c_img, c_vars = st.columns([1, 2])
+                with c_img:
+                    st.image(data['path'], caption="Source Image")
+                
+                with c_vars:
+                    updated_vars = []
+                    for i, var in enumerate(data['variations']):
+                        st.markdown(f"**Variation {var.get('variation', i+1)}: {var.get('concept_name', '')}**")
+                        new_prompt = st.text_area(
+                            "Prompt", 
+                            value=var.get("prompt", ""), 
+                            key=f"p_{item_id}_{i}",
+                            height=120
+                        )
+                        var['prompt'] = new_prompt
+                        updated_vars.append(var)
                     
-        st.success(f"Batch Queued! {len(st.session_state.batch_task_ids)} tasks submitted.")
+                    # Update state with edits
+                    st.session_state.generated_prompts[item_id]['variations'] = updated_vars
 
 
-    # --- 3. Status & Download ---
-    st.subheader("3. Batch Status & Download")
+    # --- 3. Configure, Queue & Poll ---
+    st.subheader("3. Configure, Queue & Poll")
+    
+    # --- Presets Logic ---
+    PRESETS_DIR = os.path.join(os.path.dirname(__file__), '..', 'prompts', 'presets')
+    PRESETS_FILE = os.path.join(PRESETS_DIR, 'kling_presets.json')
+    
+    def ensure_presets_dir():
+        if not os.path.exists(PRESETS_DIR):
+            os.makedirs(PRESETS_DIR, exist_ok=True)
+            
+    def load_presets():
+        ensure_presets_dir()
+        if os.path.exists(PRESETS_FILE):
+            try:
+                with open(PRESETS_FILE, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except: return {}
+        return {}
 
-    # Recover Batch logic
-    with st.expander("🔄 Recover Incomplete Batch", expanded=not st.session_state.batch_task_ids):
-        incomplete = video_storage.get_incomplete_batches()
-        if incomplete:
-            opts = {f"{b['created_at']} - {b['batch_id'][:8]}... ({b['count']} tasks)": b['batch_id'] for b in incomplete}
-            sel = st.selectbox("Select Batch", list(opts.keys()))
-            if st.button("Load Batch"):
-                bid = opts[sel]
-                execs = video_storage.get_batch_executions(bid)
-                st.session_state.batch_id = bid
-                st.session_state.batch_task_ids = [e['execution_id'] for e in execs]
-                st.session_state.batch_status_map = {e['execution_id']: {'status': e['status'], 'path': e['video_output_path']} for e in execs}
-                st.rerun()
+    def save_preset(name, data):
+        ensure_presets_dir()
+        presets = load_presets()
+        presets[name] = data
+        with open(PRESETS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(presets, f, indent=2)
 
-    if st.session_state.batch_task_ids:
-        st.info(f"Active Batch: `{st.session_state.batch_id}` | Tasks: {len(st.session_state.batch_task_ids)}")
+    # Initialize State Defaults
+    defaults = {
+        "k_model": "kling-v1",
+        "k_mode": "std",
+        "k_duration": "5",
+        "k_aspect": "16:9",
+        "k_cfg": 0.5,
+        "k_negative": "blurry, low quality, distorted, static",
+        "k_sound": False,
+        "k_voice_input": ""
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+    # Callback to apply preset
+    def apply_preset():
+        sel = st.session_state.preset_selector
+        if sel and sel != "Custom":
+            presets = load_presets()
+            if sel in presets:
+                data = presets[sel]
+                # Update state
+                st.session_state.k_model = data.get("model_name", "kling-v1")
+                st.session_state.k_mode = data.get("mode", "std")
+                st.session_state.k_duration = data.get("duration", "5")
+                st.session_state.k_aspect = data.get("aspect_ratio", "16:9")
+                st.session_state.k_cfg = data.get("cfg_scale", 0.5)
+                st.session_state.k_negative = data.get("negative_prompt", "")
+                st.session_state.k_sound = data.get("sound_enabled", False)
+                st.session_state.k_voice_input = data.get("voice_input", "")
+
+
+    # Configuration UI
+    with st.expander("Kling AI Settings", expanded=True):
         
-        # Check Status Button
-        if st.button("🔄 Check Status Now"):
-            with st.expander("Status Logs", expanded=True):
-                with st.container(height=300):
-                    status_log_placeholder = st.empty()
-                    status_logger = StreamlitLogger(status_log_placeholder)
-                    
-                    with contextlib.redirect_stdout(status_logger):
-                        with st.spinner("Checking status..."):
-                            raw_video_dir = os.path.join(OUTPUT_DIR, "video-raw")
-                            os.makedirs(raw_video_dir, exist_ok=True)
-                            
-                            for task_id in st.session_state.batch_task_ids:
-                                print(f"Checking Task: {task_id}")
-                                # Logic similar to original, but one-pass
-                                
-                                # 1. Get DB Record
-                                db_rec = video_storage.get_execution(task_id)
-                                local_path = db_rec.get('video_output_path')
-                                status = db_rec.get('status')
-                                filename_id = db_rec.get('filename_id')
-                                
-                                if status == 'completed' and local_path and os.path.exists(local_path):
-                                    print(f"  - Already completed locally: {local_path}")
-                                    st.session_state.batch_status_map[task_id] = {'status': 'completed', 'path': local_path}
-                                    continue
-                                
-                                # 2. Check Remote
-                                try:
-                                    res = asyncio.run(comfy_client.check_status_local(task_id))
-                                    r_status = res.get("status")
-                                    print(f"  - Remote Status: {r_status}")
-                                    if r_status == 'failed':
-                                        print(f"  - Details: {res}")
-                                    
-                                    if r_status == "succeed":
-                                        # Download
-                                        if filename_id:
-                                            fname = f"ComfyUI-{filename_id}.mp4"
-                                        else:
-                                            fname = res.get("filename") or f"ComfyUI-{task_id}.mp4"
-                                        
-                                        gcs_name = f"outputs/{fname}"
-                                        l_path = os.path.join(raw_video_dir, fname)
-                                        print(f"  - GCS File: {gcs_name}")
-                                        
-                                        # Check GCS/Download
-                                        if check_blob_exists(gcs_name):
-                                            print(f"  - Found in GCS, downloading...")
-                                            if not os.path.exists(l_path) or os.path.getsize(l_path) == 0:
-                                                download_blob_to_file(gcs_name, l_path)
-                                            
-                                            if os.path.exists(l_path) and os.path.getsize(l_path) > 0:
-                                                print(f"  - Download success: {l_path}")
-                                                video_storage.update_result(task_id, l_path, 'completed')
-                                                st.session_state.batch_status_map[task_id] = {'status': 'completed', 'path': l_path}
-                                            else:
-                                                print(f"  - Download failed or empty file")
-                                                st.session_state.batch_status_map[task_id] = {'status': 'download_failed'}
-                                        else:
-                                            print(f"  - Not found in GCS yet (uploading?)")
-                                            st.session_state.batch_status_map[task_id] = {'status': 'uploading_to_gcs'}
-                                            
-                                    elif r_status == "failed":
-                                         print(f"  - Task failed on server")
-                                         video_storage.update_result(task_id, status='failed')
-                                         st.session_state.batch_status_map[task_id] = {'status': 'failed'}
-                                    else:
-                                         st.session_state.batch_status_map[task_id] = {'status': 'running'}
-                                         
-                                except Exception as e:
-                                    print(f"Error checking {task_id}: {e}")
-                                    st.session_state.batch_status_map[task_id] = {'status': 'error'}
+        # Load Presets
+        all_presets = load_presets()
+        preset_options = ["Custom"] + sorted(list(all_presets.keys()))
+        
+        c_p1, c_p2 = st.columns([3, 1])
+        with c_p1:
+            st.selectbox(
+                "📁 Load Preset", 
+                options=preset_options, 
+                key="preset_selector", 
+                on_change=apply_preset,
+                help="Select a saved preset to auto-fill settings."
+            )
+        
+        st.divider()
+        st.caption("Configure generation parameters for Kling V2.6+")
+        
+        # Row 1: Model, Mode, Duration
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            model_name = st.selectbox("Model Name", ["kling-v1", "kling-v1-5", "kling-v1-6", "kling-v2-master", "kling-v2-1", "kling-v2-5-turbo", "kling-v2-6"], key="k_model")
+        with c2:
+            mode = st.selectbox("Generation Mode", ["std", "pro"], key="k_mode")
+        with c3:
+            duration = st.selectbox("Duration (s)", ["5", "10"], key="k_duration")
 
-        # Display Grid
+        # Row 2: Aspect Ratio, CFG Scale
+        c4, c5 = st.columns(2)
+        with c4:
+            aspect_ratio = st.selectbox("Aspect Ratio", ["16:9", "9:16", "1:1"], key="k_aspect")
+        with c5:
+            cfg_scale = st.slider("CFG Scale", 0.0, 1.0, step=0.1, key="k_cfg", help="Guidance scale (default 0.5). V2.x often ignores this.")
+
+        # Negative Prompt
+        negative_prompt = st.text_input("Negative Prompt", key="k_negative")
+
+        st.divider()
+        
+        # --- Audio & Voice (V2.6+) ---
+        st.markdown("#### Audio Settings")
+        # Check if model supports audio (V2.6+)
+        is_v2_6 = "v2-6" in model_name or "v2.6" in model_name
+        
+        sound_enabled = st.toggle("Generate Sound", disabled=not is_v2_6, key="k_sound", help="Requires Kling V2.6+")
+        voice_ids = []
+        
+        # Logic for voice input visibility
+        if sound_enabled:
+            v_input = st.text_input("Voice IDs (comma separated)", key="k_voice_input", help="Enter custom voice IDs (e.g. v_001). Use <<<voice_1>>> in prompt.")
+            if v_input:
+                voice_ids = [{"voice_id": v.strip()} for v in v_input.split(",") if v.strip()]
+
+        st.divider()
+        
+        # Save Preset
+        with st.popover("💾 Save Current Settings as Preset"):
+            new_preset_name = st.text_input("Preset Name", placeholder="e.g., Vertical-Pro-Sound")
+            if st.button("Save Preset"):
+                if new_preset_name:
+                    data_to_save = {
+                        "model_name": model_name,
+                        "mode": mode,
+                        "duration": duration,
+                        "aspect_ratio": aspect_ratio,
+                        "cfg_scale": cfg_scale,
+                        "negative_prompt": negative_prompt,
+                        "sound_enabled": sound_enabled,
+                        "voice_input": st.session_state.k_voice_input
+                    }
+                    save_preset(new_preset_name, data_to_save)
+                    st.success(f"Saved: {new_preset_name}")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("Please enter a name.")
+
+
+    # Initialize Kling Client
+    try:
+        kling_client = KlingClient()
+        client_available = True
+    except Exception as e:
+        st.error(f"Failed to initialize Kling Client: {e}")
+        client_available = False
+
+    # Initialize Batch State
+    if "batch_task_ids" not in st.session_state:
+        st.session_state.batch_task_ids = []
+    if "batch_id" not in st.session_state:
+        st.session_state.batch_id = None
+    if "batch_status_map" not in st.session_state:
+        st.session_state.batch_status_map = {} # {task_id: {'status':..., 'path':...}}
+    if "is_polling" not in st.session_state:
+        st.session_state.is_polling = False
+
+    # Queue Button
+    if st.button("🚀 Queue to Generation", disabled=(not st.session_state.generated_prompts or not client_available)):
+        
+        # New Batch
+        batch_id = str(uuid.uuid4())
+        st.session_state.batch_id = batch_id
+        st.session_state.batch_task_ids = []
+        st.session_state.batch_status_map = {}
+        
+        st.write(f"Starting Batch: `{batch_id}`")
+        
+        # Queue Loop
+        with st.status("Submitting tasks to Kling...", expanded=True) as status:
+            for item_id, data in st.session_state.generated_prompts.items():
+                image_path = data['path']
+                variations = data['variations']
+                
+                for v_idx, var in enumerate(variations):
+                    prompt = var.get("prompt")
+                    try:
+                        filename_id = str(uuid.uuid4())
+                        status.write(f"Queueing: {os.path.basename(image_path)} - Var {v_idx+1}")
+                        
+                        # Call Kling API
+                        task_id = kling_client.generate_video(
+                            prompt=prompt,
+                            image=image_path,
+                            model_name=model_name,
+                            cfg_scale=cfg_scale,
+                            mode=mode,
+                            aspect_ratio=aspect_ratio,
+                            duration=duration,
+                            negative_prompt=negative_prompt,
+                            sound="on" if sound_enabled else "off",
+                            voice_list=voice_ids if voice_ids else None
+                        )
+                        
+                        # Log to DB
+                        video_storage.log_execution(
+                            task_id, prompt, image_path, 
+                            batch_id=batch_id, filename_id=filename_id
+                        )
+                        
+                        st.session_state.batch_task_ids.append(task_id)
+                        st.session_state.batch_status_map[task_id] = {'status': 'pending'}
+                        
+                    except Exception as e:
+                        status.write(f"❌ Error queueing variation {v_idx+1}: {e}")
+            
+            status.update(label="Batch Submitted!", state="complete", expanded=False)
+            
+        st.success(f"Batch Queued! {len(st.session_state.batch_task_ids)} tasks submitted.")
+        st.session_state.is_polling = True
+        st.rerun()
+
+    
+    # --- Polling & Status ---
+    st.markdown("#### Batch Status")
+    
+    # Polling Controls
+    col_p1, col_p2 = st.columns([1, 3])
+    with col_p1:
+        if st.session_state.is_polling:
+            if st.button("⏹ Stop Polling"):
+                st.session_state.is_polling = False
+                st.rerun()
+        else:
+            if st.button("▶ Start Polling", disabled=not st.session_state.batch_task_ids):
+                st.session_state.is_polling = True
+                st.rerun()
+    
+    with col_p2:
+         # Recover Batch logic
+        with st.expander("🔄 Recover Incomplete Batch", expanded=False):
+            incomplete = video_storage.get_incomplete_batches()
+            if incomplete:
+                opts = {f"{b['created_at']} - {b['batch_id'][:8]}... ({b['count']} tasks)": b['batch_id'] for b in incomplete}
+                sel = st.selectbox("Select Batch", list(opts.keys()))
+                if st.button("Load Batch"):
+                    bid = opts[sel]
+                    execs = video_storage.get_batch_executions(bid)
+                    st.session_state.batch_id = bid
+                    st.session_state.batch_task_ids = [e['execution_id'] for e in execs]
+                    st.session_state.batch_status_map = {e['execution_id']: {'status': e['status'], 'path': e['video_output_path']} for e in execs}
+                    st.session_state.is_polling = False # Don't auto-start
+                    st.rerun()
+
+    # Display Status Grid
+    if st.session_state.batch_task_ids:
         tasks = st.session_state.batch_task_ids
         cols = st.columns(4)
         completed_count = 0
@@ -478,33 +595,80 @@ with tab_create:
                     failed_count += 1
                 elif s == 'running':
                     st.warning("Running")
+                elif 'error' in s:
+                    st.error(s)
                 else:
                     st.info(s)
         
-        # Download All Button
+        # Check completion
         all_done = (completed_count + failed_count) == len(tasks) and len(tasks) > 0
-        
+        if all_done and st.session_state.is_polling:
+             st.session_state.is_polling = False
+             st.success("All tasks finished!")
+             st.rerun()
+
+        # Polling Logic
+        if st.session_state.is_polling:
+            with st.spinner(f"Polling status... ({completed_count}/{len(tasks)} done)"):
+                time.sleep(5) # Poll interval
+                
+                raw_video_dir = os.path.join(OUTPUT_DIR, "video-raw")
+                os.makedirs(raw_video_dir, exist_ok=True)
+                
+                for task_id in st.session_state.batch_task_ids:
+                    # Skip if already final
+                    curr_status = st.session_state.batch_status_map.get(task_id, {}).get('status')
+                    if curr_status in ['completed', 'failed']:
+                        continue
+
+                    try:
+                        # Get DB info first
+                        db_rec = video_storage.get_execution(task_id)
+                        filename_id = db_rec.get('filename_id')
+                        
+                        # Call Kling API
+                        res = kling_client.get_video_status(task_id)
+                        k_status = res.get("task_status")
+                        
+                        if k_status == "succeed":
+                            video_url = res.get("video_url")
+                            if video_url:
+                                if filename_id: fname = f"Kling-{filename_id}.mp4"
+                                else: fname = f"Kling-{task_id}.mp4"
+                                
+                                l_path = os.path.join(raw_video_dir, fname)
+                                try:
+                                    kling_client.download_video(video_url, l_path)
+                                    if os.path.exists(l_path) and os.path.getsize(l_path) > 0:
+                                        video_storage.update_result(task_id, l_path, 'completed')
+                                        st.session_state.batch_status_map[task_id] = {'status': 'completed', 'path': l_path}
+                                    else:
+                                        st.session_state.batch_status_map[task_id] = {'status': 'download_failed'}
+                                except Exception:
+                                     st.session_state.batch_status_map[task_id] = {'status': 'download_error'}
+                            else:
+                                st.session_state.batch_status_map[task_id] = {'status': 'error_no_url'}
+                                
+                        elif k_status == "failed":
+                             video_storage.update_result(task_id, status='failed')
+                             st.session_state.batch_status_map[task_id] = {'status': 'failed'}
+                        else:
+                             st.session_state.batch_status_map[task_id] = {'status': 'running'}
+                             
+                    except Exception as e:
+                        print(f"Polling error {task_id}: {e}")
+                
+                st.rerun()
+                
+        # Setup for Merge if done
         if all_done:
-            if completed_count > 0:
-                st.success("All tasks finished!")
-                
-                # Setup for Merge
-                if "videos_to_merge" not in st.session_state:
-                    st.session_state.videos_to_merge = []
-                
-                # Collect completed paths
-                valid_paths = []
-                for tid in tasks:
-                    info = st.session_state.batch_status_map.get(tid)
-                    if info and info.get('status') == 'completed' and info.get('path'):
-                        valid_paths.append(info['path'])
-                
-                st.session_state.videos_to_merge = valid_paths
-                
-            else:
-                st.error("All tasks failed.")
-        else:
-            st.info(f"Waiting for tasks... ({completed_count}/{len(tasks)} completed)")
+            # Collect completed paths
+            valid_paths = []
+            for tid in tasks:
+                info = st.session_state.batch_status_map.get(tid)
+                if info and info.get('status') == 'completed' and info.get('path'):
+                    valid_paths.append(info['path'])
+            st.session_state.videos_to_merge = valid_paths
 
 
     # --- 4. Merge ---
