@@ -15,3 +15,4 @@ uvicorn
 apscheduler
 email-validator
 fastapi-sso
+streamlit-sortables
