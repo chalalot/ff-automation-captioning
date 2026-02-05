@@ -18,8 +18,13 @@ from src.workflows.video_storyboard_workflow import VideoStoryboardWorkflow
 from src.utils.streamlit_utils import get_sorted_images, StreamlitLogger
 from src.database.video_logs_storage import VideoLogsStorage
 from src.third_parties.gcs_client import check_blob_exists, download_blob_to_file
-from scripts.merge_videos_test import merge_videos
+import src.utils.video_utils
+import importlib
+importlib.reload(src.utils.video_utils)
+from src.utils.video_utils import merge_videos
 from src.third_parties.kling_client import KlingClient
+from streamlit_sortables import sort_items
+from moviepy import VideoFileClip
 
 # Initialize Storage
 video_storage = VideoLogsStorage()
@@ -32,6 +37,7 @@ st.title("🎬 Video Storyboard & Generation")
 # Constants
 INPUT_DIR = GlobalConfig.INPUT_DIR
 OUTPUT_DIR = GlobalConfig.OUTPUT_DIR
+RAW_VIDEO_DIR = os.path.join(OUTPUT_DIR, "raw_video")
 
 # Sidebar Configuration for Persona (Removed)
 kol_persona = "Jennie"
@@ -50,8 +56,27 @@ def get_sorted_videos(directory):
     videos.sort(key=lambda x: os.path.getmtime(os.path.join(directory, x)), reverse=True)
     return videos
 
+def generate_thumbnail(video_path, output_dir):
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+        video_name = os.path.basename(video_path)
+        # Handle cases where video name might not have extension or different one
+        base_name = os.path.splitext(video_name)[0]
+        thumb_name = f"{base_name}.jpg"
+        thumb_path = os.path.join(output_dir, thumb_name)
+        
+        if not os.path.exists(thumb_path):
+            # Generate thumbnail
+            # Use context manager to ensure clip is closed
+            with VideoFileClip(video_path) as clip:
+                clip.save_frame(thumb_path, t=0.1)
+        return thumb_path
+    except Exception as e:
+        # print(f"Thumbnail error for {video_path}: {e}")
+        return None
+
 # --- Tabs ---
-tab_create, tab_gallery = st.tabs(["Create Video", "Video Gallery"])
+tab_create, tab_constructor, tab_gallery = st.tabs(["Create Video", "Video Constructor", "Video Gallery"])
 
 with tab_create:
 
@@ -612,7 +637,7 @@ with tab_create:
             with st.spinner(f"Polling status... ({completed_count}/{len(tasks)} done)"):
                 time.sleep(5) # Poll interval
                 
-                raw_video_dir = os.path.join(OUTPUT_DIR, "video-raw")
+                raw_video_dir = RAW_VIDEO_DIR
                 os.makedirs(raw_video_dir, exist_ok=True)
                 
                 for task_id in st.session_state.batch_task_ids:
@@ -716,6 +741,205 @@ with tab_create:
                          
                 except Exception as e:
                     st.error(f"Merge failed: {e}")
+
+# --- Video Constructor Tab ---
+with tab_constructor:
+    st.subheader("🛠️ Video Constructor")
+    
+    # Ensure directories
+    os.makedirs(RAW_VIDEO_DIR, exist_ok=True)
+    THUMB_DIR = os.path.join(OUTPUT_DIR, "thumbnails")
+    
+    # --- Top: Library ---
+    st.markdown("### 📂 Library")
+    
+    # Upload & Controls
+    with st.expander("Upload New Clip", expanded=False):
+        uploaded_raw = st.file_uploader("Upload Clip", type=['mp4', 'mov', 'avi'], key="raw_uploader")
+        if uploaded_raw:
+             if st.button("Save to Library"):
+                 save_path = os.path.join(RAW_VIDEO_DIR, uploaded_raw.name)
+                 with open(save_path, "wb") as f:
+                     f.write(uploaded_raw.getbuffer())
+                 st.success("Saved!")
+                 time.sleep(1)
+                 st.rerun()
+
+    # Fetch Videos
+    valid_exts = ('.mp4', '.mov', '.avi')
+    if os.path.exists(RAW_VIDEO_DIR):
+        raw_videos = [f for f in os.listdir(RAW_VIDEO_DIR) if f.lower().endswith(valid_exts)]
+        raw_videos.sort(key=lambda x: os.path.getmtime(os.path.join(RAW_VIDEO_DIR, x)), reverse=True)
+    else:
+        raw_videos = []
+    
+    # Pagination Logic
+    ITEMS_PER_PAGE = 12
+    if "const_lib_page" not in st.session_state: st.session_state.const_lib_page = 0
+    
+    total_videos = len(raw_videos)
+    total_pages = max(1, (total_videos + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
+    
+    # Navigation
+    c_nav1, c_nav2, c_nav3 = st.columns([1, 6, 1])
+    with c_nav1:
+        if st.button("◀ Prev", key="lib_prev", disabled=st.session_state.const_lib_page == 0):
+            st.session_state.const_lib_page -= 1
+            st.rerun()
+    with c_nav2:
+        st.caption(f"Page {st.session_state.const_lib_page + 1} of {total_pages} ({total_videos} clips)")
+    with c_nav3:
+        if st.button("Next ▶", key="lib_next", disabled=st.session_state.const_lib_page >= total_pages - 1):
+            st.session_state.const_lib_page += 1
+            st.rerun()
+    
+    # Grid Display
+    start_idx = st.session_state.const_lib_page * ITEMS_PER_PAGE
+    end_idx = start_idx + ITEMS_PER_PAGE
+    current_batch = raw_videos[start_idx:end_idx]
+    
+    if not current_batch:
+        st.info("No videos found in library.")
+    else:
+        # Fixed 6-column grid for consistent card size
+        cols = st.columns(6)
+        for i, v_file in enumerate(current_batch):
+            v_path = os.path.join(RAW_VIDEO_DIR, v_file)
+            
+            with cols[i % 6]:
+                with st.container(border=True):
+                    # Direct Video Preview
+                    st.video(v_path)
+                    
+                    # Truncate filename if too long for card
+                    display_name = (v_file[:15] + '..') if len(v_file) > 18 else v_file
+                    st.caption(f"**{display_name}**")
+                    
+                    # Add Action
+                    if st.button("➕ Add", key=f"add_{v_file}", use_container_width=True):
+                         if "track_videos" not in st.session_state: st.session_state.track_videos = []
+                         st.session_state.track_videos.append(v_file)
+                         st.toast(f"Added {v_file}")
+
+    st.divider()
+
+    # --- Bottom: Timeline Track ---
+    st.markdown("### 🎬 Timeline Track")
+    
+    if "track_videos" not in st.session_state: st.session_state.track_videos = []
+    
+    if not st.session_state.track_videos:
+        st.info("Timeline is empty. Add clips from the Library above.")
+    else:
+        # Sortable List with Compact Labels
+        st.caption("Drag items below to reorder sequence:")
+        
+        # Create mapping: Label -> (OriginalIndex, Filename) to handle duplicates and reconstruction
+        # We assume uniqueness of items by index for sorting purposes if needed, but sort_items creates a new order
+        # To handle duplicates (e.g. same video added twice), we need unique labels.
+        # We append a hidden ID or just the original index to the label?
+        # Label format: "{OriginalIndex}. ..{Last4Chars}"
+        
+        current_track = st.session_state.track_videos
+        labels = []
+        label_map = {} # label -> filename
+        
+        for idx, v_file in enumerate(current_track):
+            name_no_ext = os.path.splitext(v_file)[0]
+            short_suffix = name_no_ext[-4:] if len(name_no_ext) > 4 else name_no_ext
+            # Use a unique prefix (idx) to ensure every list item is distinct for the sorter
+            # This allows reordering "1. ..AB" and "2. ..AB" effectively.
+            label = f"{idx+1}. ..{short_suffix}"
+            labels.append(label)
+            label_map[label] = v_file
+
+        sorted_labels = sort_items(labels)
+        
+        # Reconstruct track from sorted labels
+        new_track_order = [label_map[lbl] for lbl in sorted_labels]
+        st.session_state.track_videos = new_track_order
+        
+        st.write("") # Spacer
+        
+        # Visual Filmstrip (Fixed Grid)
+        st.caption("Sequence Preview & Edit:")
+        # Use 8 columns for smaller filmstrip cards
+        f_cols = st.columns(6)
+        
+        # We iterate over the NEW sorted track
+        videos_to_remove_indices = []
+        
+        for i, v_file in enumerate(st.session_state.track_videos):
+            v_path = os.path.join(RAW_VIDEO_DIR, v_file)
+            thumb_path = generate_thumbnail(v_path, THUMB_DIR)
+            
+            # Calculate column index (wrapping)
+            col_idx = i % 8
+            # If wrapping to new row, create new columns
+            if col_idx == 0 and i > 0:
+                f_cols = st.columns(8)
+            
+            with f_cols[col_idx]:
+                 with st.container(border=True):
+                    st.caption(f"#{i+1}")
+                    if thumb_path and os.path.exists(thumb_path):
+                        st.image(thumb_path, use_container_width=True)
+                    else:
+                        st.caption("No Preview")
+                    
+                    # Remove Button
+                    if st.button("🗑️", key=f"rem_track_{i}", help="Remove from track"):
+                        videos_to_remove_indices.append(i)
+
+        # Process removals
+        if videos_to_remove_indices:
+            # Remove in reverse order to avoid index shift issues
+            for idx in sorted(videos_to_remove_indices, reverse=True):
+                st.session_state.track_videos.pop(idx)
+            st.rerun()
+        
+        st.divider()
+        
+        # Transition Configuration
+        st.caption("Merge Configuration:")
+        c_t1, c_t2 = st.columns(2)
+        with c_t1:
+            trans_type = st.selectbox("Transition Style", ["Crossfade", "Fade to Black", "Simple Cut"], index=0)
+        with c_t2:
+            trans_dur = st.slider("Transition Duration (s)", 0.1, 2.0, 0.5, step=0.1)
+        
+        st.divider()
+        
+        # Merge Actions
+        ac1, ac2, ac3 = st.columns([1, 2, 1])
+        with ac2:
+            if st.button("🎥 Merge Sequence", type="primary", use_container_width=True):
+                 prog_bar = st.progress(0)
+                 status_text = st.empty()
+                 
+                 def update_prog(p, **kwargs):
+                     prog_bar.progress(p)
+                     status_text.caption(f"Processing... {int(p*100)}%")
+
+                 with st.spinner("Merging clips..."):
+                    timestamp = time.strftime("%Y%m%d-%H%M%S")
+                    merged_filename = f"constructed_video_{timestamp}.mp4"
+                    merged_path = os.path.join(OUTPUT_DIR, merged_filename)
+                    input_paths = [os.path.join(RAW_VIDEO_DIR, f) for f in st.session_state.track_videos]
+                    
+                    try:
+                        merge_videos(input_paths, merged_path, transition_type=trans_type, duration=trans_dur, progress_callback=update_prog)
+                        prog_bar.empty()
+                        status_text.empty()
+                        st.success("Merge Complete!")
+                        st.video(merged_path)
+                        st.markdown(f"**Saved to:** `{merged_path}`")
+                    except Exception as e:
+                        st.error(f"Merge Failed: {e}")
+        with ac3:
+             if st.button("Clear Track", use_container_width=True):
+                st.session_state.track_videos = []
+                st.rerun()
 
 # --- Video Gallery Tab ---
 with tab_gallery:

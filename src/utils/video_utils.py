@@ -1,8 +1,23 @@
 from moviepy import VideoFileClip, concatenate_videoclips
 import moviepy.video.fx as vfx
 import os
+from proglog import ProgressBarLogger
 
-def merge_videos(video_paths, output_path, transition_type="Crossfade", duration=0.5):
+class StreamlitLogger(ProgressBarLogger):
+    def __init__(self, callback):
+        super().__init__()
+        self.progress_handler = callback
+
+    def bars_callback(self, bar, attr, value, old_value=None):
+        if self.progress_handler and bar in self.bars and 'total' in self.bars[bar]:
+            total = self.bars[bar]['total']
+            if total > 0:
+                progress = value / total
+                # Ensure progress is between 0 and 1
+                progress = max(0.0, min(1.0, progress))
+                self.progress_handler(progress)
+
+def merge_videos(video_paths, output_path, transition_type="Crossfade", duration=0.5, progress_callback=None):
     print(f"Loading videos: {video_paths}")
     clips = []
     try:
@@ -51,7 +66,12 @@ def merge_videos(video_paths, output_path, transition_type="Crossfade", duration
             final_video = concatenate_videoclips(clips, method="compose")
 
         print(f"Writing output to {output_path}")
-        final_video.write_videofile(output_path, codec="libx264", audio_codec="aac")
+        
+        logger = "bar" # Default
+        if progress_callback:
+            logger = StreamlitLogger(progress_callback)
+            
+        final_video.write_videofile(output_path, codec="libx264", audio_codec="aac", logger=logger)
         
     except Exception as e:
         print(f"Error: {e}")
@@ -66,23 +86,3 @@ def merge_videos(video_paths, output_path, transition_type="Crossfade", duration
                 clip.close()
             except:
                 pass
-
-if __name__ == "__main__":
-    video_dir = "video-raw"
-    files = [
-        "kling_20260105_Image_to_Video_A_cozy__we_4370_0.mp4",
-        "kling_20260105_Image_to_Video_A_cozy__we_4381_0.mp4",
-        "kling_20260105_Image_to_Video_In_a_cozy__4382_0.mp4"
-    ]
-    
-    # Check if files exist before running
-    input_paths = [os.path.join(video_dir, f) for f in files if os.path.exists(os.path.join(video_dir, f))]
-    
-    if input_paths:
-        # Ensure output directory exists
-        os.makedirs("results", exist_ok=True)
-        output_path = os.path.join("results", "merged_video_test.mp4")
-        
-        merge_videos(input_paths, output_path, transition_type="Crossfade", duration=1.0)
-    else:
-        print("Test files not found.")
