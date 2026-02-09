@@ -83,12 +83,13 @@ def get_kling_history():
                 print(f"Error: API returned code {result.get('code')}: {result.get('message')}")
                 break
                 
-            data_list = result.get("data", {}).get("tasks", [])
-            # Note: API structure might vary. Sometimes 'data' is the list, sometimes 'data.tasks'.
-            # Based on standard list endpoints, often it's {code: 0, data: {total: 100, tasks: [...]}}
-            # If 'data' is directly the list, we handle that too.
-            if isinstance(result.get("data"), list):
-                data_list = result.get("data")
+            data_field = result.get("data")
+            if isinstance(data_field, list):
+                data_list = data_field
+            elif isinstance(data_field, dict):
+                data_list = data_field.get("tasks", [])
+            else:
+                data_list = []
             
             if not data_list:
                 print(f"No more data found at page {page_num}.")

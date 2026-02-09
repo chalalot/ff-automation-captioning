@@ -15,9 +15,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.config import GlobalConfig
 from src.workflows.video_storyboard_workflow import VideoStoryboardWorkflow
+from src.workflows.music_analysis_workflow import MusicAnalysisWorkflow
 from src.utils.streamlit_utils import get_sorted_images, StreamlitLogger
 from src.database.video_logs_storage import VideoLogsStorage
-from src.third_parties.gcs_client import check_blob_exists, download_blob_to_file
+from src.third_parties.gcs_client import check_blob_exists, download_blob_to_file, upload_bytes_to_gcs
 import src.utils.video_utils
 import importlib
 importlib.reload(src.utils.video_utils)
@@ -76,7 +77,7 @@ def generate_thumbnail(video_path, output_dir):
         return None
 
 # --- Tabs ---
-tab_create, tab_constructor, tab_gallery = st.tabs(["Create Video", "Video Constructor", "Video Gallery"])
+tab_create, tab_constructor, tab_gallery, tab_song_producer = st.tabs(["Create Video", "Video Constructor", "Video Gallery", "Song Producer"])
 
 with tab_create:
 
@@ -958,3 +959,84 @@ with tab_gallery:
                     video_path = os.path.join(OUTPUT_DIR, video_filename)
                     st.caption(video_filename)
                     st.video(video_path)
+
+# --- Song Producer Tab ---
+with tab_song_producer:
+    st.subheader("🎵 Song Producer")
+    st.info("Upload an MP3 song to extract its vibe and lyrics using AI agents.")
+
+    # File Uploader
+    uploaded_song = st.file_uploader("Upload Song (MP3)", type=['mp3'])
+    
+    if uploaded_song:
+        # Save temp file
+        temp_dir = os.path.join(INPUT_DIR, "temp_audio")
+        os.makedirs(temp_dir, exist_ok=True)
+        song_path = os.path.join(temp_dir, uploaded_song.name)
+        
+        # Save to disk
+        with open(song_path, "wb") as f:
+            f.write(uploaded_song.getbuffer())
+            
+        st.success(f"File uploaded: {uploaded_song.name}")
+        st.audio(song_path)
+        
+        if st.button("🚀 Analyze & Produce"):
+            with st.status("Processing Song...", expanded=True) as status:
+                
+                # 1. Upload to GCS
+                status.write("Uploading to GCS...")
+                try:
+                    # Use the specific bucket for audio
+                    audio_bucket = os.getenv("GCS_AUDIO_BUCKET_NAME", "ff-automation")
+                    
+                    with open(song_path, "rb") as f:
+                        file_bytes = f.read()
+                        
+                    # Generate a unique path in the bucket
+                    # e.g. scraped-audio-host/{timestamp}_{filename}
+                    ts = int(time.time())
+                    gcs_path = f"scraped-audio-host/{ts}_{uploaded_song.name}"
+                    
+                    public_url = upload_bytes_to_gcs(
+                        payload=file_bytes,
+                        gcs_path=gcs_path,
+                        content_type="audio/mpeg",
+                        bucket_name=audio_bucket
+                    )
+                    status.write(f"✅ Uploaded to GCS: {public_url}")
+                    
+                except Exception as e:
+                    status.update(label="Upload Failed", state="error")
+                    st.error(f"GCS Upload Error: {e}")
+                    st.stop()
+                
+                # 2. Run CrewAI Analysis
+                status.write("Running AI Agents (Vibe & Lyrics)...")
+                try:
+                    workflow = MusicAnalysisWorkflow(verbose=True)
+                    result = workflow.process(song_path)
+                    status.write("✅ Analysis Complete")
+                    
+                except Exception as e:
+                    status.update(label="Analysis Failed", state="error")
+                    st.error(f"CrewAI Error: {e}")
+                    st.stop()
+                
+                status.update(label="Processing Complete!", state="complete", expanded=False)
+            
+            # --- Display Results ---
+            st.divider()
+            
+            c1, c2 = st.columns(2)
+            
+            with c1:
+                st.markdown("### 🎹 Vibe & Style")
+                st.markdown(result.get("vibe", "No vibe detected."))
+                
+                st.markdown("### 🔗 Cloud Link")
+                st.code(public_url)
+                
+            with c2:
+                st.markdown("### 📝 Full Lyrics")
+                st.text_area("Lyrics", value=result.get("lyrics", "No lyrics detected."), height=600)
