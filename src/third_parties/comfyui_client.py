@@ -615,6 +615,8 @@ class ComfyUIClient:
         workflow_type: str = "turbo",
         workflow_name: Optional[str] = None,
         lora_name: Optional[str] = None,
+        lora_low: Optional[str] = None,
+        lora_high: Optional[str] = None,
         kol_persona: Optional[str] = None,
         input_image_path: Optional[str] = None,
         strength_model: Optional[str] = None,
@@ -760,18 +762,26 @@ class ComfyUIClient:
                 "height": str(height)
             }
 
-            if kol_persona:
-                persona_lora = None
+            # Determine Turbo LoRA
+            final_lora = None
+            
+            # 1. Check override
+            if lora_name:
+                final_lora = lora_name
+                logger.info(f"🎭 Turbo LoRA Override: {final_lora}")
+            
+            # 2. Check mapping
+            elif kol_persona:
                 for persona_key in PERSONA_LORA_MAPPING_TURBO.keys():
                     if persona_key.lower() == kol_persona.lower():
-                        persona_lora = PERSONA_LORA_MAPPING_TURBO[persona_key]
+                        final_lora = PERSONA_LORA_MAPPING_TURBO[persona_key]
+                        logger.info(f"🎭 Turbo LoRA Mapped: {final_lora}")
                         break
-                
-                if persona_lora:
-                    payload["input_overrides"]["persona_lora_name"] = persona_lora
-                    logger.info(f"🎭 Turbo LoRA Applied: {persona_lora}")
-                else:
+                if not final_lora:
                     logger.warning(f"⚠️  Unknown/Pending Persona for Turbo: {kol_persona}")
+            
+            if final_lora:
+                payload["input_overrides"]["persona_lora_name"] = final_lora
         
         else:
             # WAN2.2 WORKFLOW LOGIC (Old logic)
@@ -785,19 +795,29 @@ class ComfyUIClient:
                 "persona_high_lora_name": ""
             }
 
+            # Determine WAN LoRAs
+            final_low = None
+            final_high = None
+            
+            # Get defaults from mapping
+            default_low = ""
+            default_high = ""
             if kol_persona:
-                persona_config = None
                 for persona_key in PERSONA_LORA_MAPPING_WAN.keys():
                     if persona_key.lower() == kol_persona.lower():
                         persona_config = PERSONA_LORA_MAPPING_WAN[persona_key]
+                        default_low = persona_config["low"]
+                        default_high = persona_config["high"]
                         break
-                
-                if persona_config:
-                    payload["input_overrides"]["persona_low_lora_name"] = persona_config["low"]
-                    payload["input_overrides"]["persona_high_lora_name"] = persona_config["high"]
-                    logger.info(f"🎭 WAN LoRA Applied: Low={persona_config['low']}, High={persona_config['high']}")
-                else:
-                    logger.warning(f"⚠️  Unknown Persona for WAN: {kol_persona}")
+            
+            # Apply overrides or defaults
+            final_low = lora_low if lora_low is not None else default_low
+            final_high = lora_high if lora_high is not None else default_high
+            
+            payload["input_overrides"]["persona_low_lora_name"] = final_low
+            payload["input_overrides"]["persona_high_lora_name"] = final_high
+            
+            logger.info(f"🎭 WAN LoRA Applied: Low={final_low}, High={final_high}")
 
         logger.info(f"📋 Workflow ID: {workflow_id}")
         logger.info(f"🌐 API URL: {self.api_url}")

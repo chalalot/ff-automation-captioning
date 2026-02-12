@@ -143,37 +143,6 @@ def get_public_url(gcs_path: str, bucket_name: str = GCS_BUCKET_NAME) -> str:
     return f"https://storage.googleapis.com/{bucket_name}/{gcs_path}"
 
 
-def generate_signed_url(
-    gcs_path: str,
-    bucket_name: str = GCS_BUCKET_NAME,
-    expiration_minutes: int = 60
-) -> str:
-    """
-    Generate a signed URL for a GCS object.
-    
-    Args:
-        gcs_path: Path to the object in GCS
-        bucket_name: GCS bucket name
-        expiration_minutes: URL expiration time in minutes
-        
-    Returns:
-        Signed URL if successful, else Public URL
-    """
-    try:
-        client = _get_gcs_client()
-        bucket = client.bucket(bucket_name)
-        blob = bucket.blob(gcs_path)
-        
-        return blob.generate_signed_url(
-            version="v4",
-            expiration=timedelta(minutes=expiration_minutes),
-            method="GET"
-        )
-    except Exception as e:
-        logger.warning(f"Failed to generate signed URL for {gcs_path}, falling back to public URL: {e}")
-        return get_public_url(gcs_path, bucket_name)
-
-
 def _get_gcs_client() -> storage.Client:
     """
     Initialize and return GCS client with credentials.
@@ -363,70 +332,6 @@ def upload_campaign_image(
         raise GCSUploadError(error_msg)
 
 
-def list_gcs_images(
-    prefix: str = "",
-    bucket_name: str = GCS_BUCKET_NAME
-) -> list:
-    """
-    List all images in a specific GCS folder prefix.
-
-    Args:
-        prefix: Folder prefix (e.g., 'comfy_ui/', 'Trung/')
-        bucket_name: GCS bucket name
-
-    Returns:
-        List of dicts with blob metadata: {
-            'name': str,           # Full path
-            'public_url': str,     # Public URL
-            'size': int,           # Size in bytes
-            'updated': datetime,   # Last updated timestamp
-            'content_type': str    # MIME type
-        }
-
-    Raises:
-        GCSClientError: If listing fails
-    """
-    try:
-        client = _get_gcs_client()
-        bucket = client.bucket(bucket_name)
-
-        blobs = bucket.list_blobs(prefix=prefix)
-
-        images = []
-        for blob in blobs:
-            # Skip directory markers
-            if blob.name.endswith('/'):
-                continue
-
-            # Generate signed URL for each image
-            try:
-                signed_url = blob.generate_signed_url(
-                    version="v4",
-                    expiration=timedelta(minutes=60),
-                    method="GET"
-                )
-            except Exception as e:
-                logger.warning(f"Failed to generate signed URL for {blob.name}: {e}")
-                signed_url = get_public_url(blob.name, bucket_name)
-
-            images.append({
-                'name': blob.name,
-                'public_url': get_public_url(blob.name, bucket_name),
-                'signed_url': signed_url,
-                'size': blob.size,
-                'updated': blob.updated,
-                'content_type': blob.content_type or 'unknown'
-            })
-
-        logger.debug(f"Found {len(images)} images in prefix '{prefix}'")
-        return images
-
-    except Exception as e:
-        error_msg = f"Failed to list images with prefix '{prefix}': {e}"
-        logger.error(error_msg)
-        raise GCSClientError(error_msg)
-
-
 def list_campaign_images(
     run_id: str,
     bucket_name: str = GCS_BUCKET_NAME
@@ -559,29 +464,6 @@ def get_next_sequence_number(
     except Exception as e:
         logger.warning(f"Failed to get next sequence number, defaulting to 1: {e}")
         return 1
-
-
-# Convenience function for testing
-def test_gcs_connection() -> bool:
-    """
-    Test GCS connection and bucket access.
-
-    Returns:
-        True if connection successful, False otherwise
-    """
-    try:
-        client = _get_gcs_client()
-        bucket = client.bucket(GCS_BUCKET_NAME)
-
-        # Try to list a few objects (minimal test)
-        list(bucket.list_blobs(max_results=1))
-
-        logger.info("GCS connection test successful")
-        return True
-
-    except Exception as e:
-        logger.error(f"GCS connection test failed: {e}")
-        return False
 
 
 def check_blob_exists(blob_name: str, bucket_name: str = GCS_BUCKET_NAME) -> bool:

@@ -87,6 +87,7 @@ with tab_create:
         
         # Paths
         base_workflow_dir = os.path.join(os.path.dirname(__file__), '..', 'prompts', 'workflows')
+        templates_dir = os.path.join(base_workflow_dir, 'templates')
         
         # Files
         files = {
@@ -100,14 +101,97 @@ with tab_create:
             "prompt_constraints": "video_prompt_constraints.txt",
             "prompt_examples": "video_prompt_examples.txt"
         }
+
+        # Session State Mapping (File Key -> Text Area Key)
+        session_key_map = {
+            "analyst_agent": "v_aa",
+            "analyst_task": "v_at",
+            "concept_agent": "v_ca",
+            "concept_task": "v_ct",
+            "prompt_agent": "v_pa",
+            "prompt_framework": "v_pf",
+            "prompt_constraints": "v_pc",
+            "prompt_examples": "v_pe"
+        }
         
-        def load_content(filename):
-            path = os.path.join(base_workflow_dir, filename)
+        def load_content(filename, directory=base_workflow_dir):
+            path = os.path.join(directory, filename)
             if os.path.exists(path):
                 try:
                     with open(path, 'r', encoding='utf-8') as f: return f.read()
                 except: return ""
             return ""
+
+        def list_templates():
+            if not os.path.exists(templates_dir):
+                return []
+            return [d for d in os.listdir(templates_dir) if os.path.isdir(os.path.join(templates_dir, d))]
+
+        def save_template(name):
+            try:
+                t_path = os.path.join(templates_dir, name)
+                os.makedirs(t_path, exist_ok=True)
+                
+                # Iterate over keys and save from session state
+                for file_key, session_key in session_key_map.items():
+                    content = st.session_state.get(session_key, "")
+                    filename = files[file_key]
+                    with open(os.path.join(t_path, filename), 'w', encoding='utf-8') as f:
+                        f.write(content)
+                
+                # Also compile prompt_task if needed, but it's derived. 
+                # We save it for completeness if we want to load it exactly as is, 
+                # but currently we reconstruct it from parts.
+                # Let's construct it from parts just to be safe/complete like the main save
+                pf = st.session_state.get("v_pf", "")
+                pc = st.session_state.get("v_pc", "")
+                pe = st.session_state.get("v_pe", "")
+                compiled_task = pf + "\n\n" + pc + "\n\n" + pe
+                with open(os.path.join(t_path, files["prompt_task"]), 'w', encoding='utf-8') as f:
+                    f.write(compiled_task)
+                    
+                st.success(f"Template '{name}' saved!")
+                time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to save template: {e}")
+
+        def load_template_to_state(name):
+            t_path = os.path.join(templates_dir, name)
+            if not os.path.exists(t_path):
+                st.error("Template not found")
+                return
+            
+            # Load each file into session state
+            for file_key, session_key in session_key_map.items():
+                filename = files[file_key]
+                content = load_content(filename, directory=t_path)
+                st.session_state[session_key] = content
+            
+            st.success(f"Template '{name}' loaded!")
+            time.sleep(0.5)
+            st.rerun()
+
+        # --- Template Management UI ---
+        st.markdown("#### 📂 Instruction Templates")
+        c_t1, c_t2 = st.columns([2, 2])
+        
+        with c_t1:
+            templates = list_templates()
+            selected_template = st.selectbox("Load Template", ["Select..."] + templates)
+            if st.button("Load Selected Template"):
+                if selected_template and selected_template != "Select...":
+                    load_template_to_state(selected_template)
+        
+        with c_t2:
+            new_template_name = st.text_input("Save Current as Template", placeholder="e.g., v2_humorous")
+            if st.button("Save New Template"):
+                if new_template_name:
+                    save_template(new_template_name)
+                else:
+                    st.warning("Please enter a name.")
+        
+        st.divider()
 
         # Tabs
         tab_analyst, tab_concept, tab_prompt = st.tabs(["Visual Analyst", "Concept Ideator", "Prompt Generator"])

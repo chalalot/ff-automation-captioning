@@ -20,7 +20,7 @@ from utils.constants import DEFAULT_NEGATIVE_PROMPT
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("ProcessAndQueue")
 
-async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callback=None, strength_model=None, seed_strategy="random", base_seed=0, width="1024", height="1600", vision_model="gpt-4o"):
+async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callback=None, strength_model=None, seed_strategy="random", base_seed=0, width="1024", height="1600", vision_model="gpt-4o", lora_name=None, lora_low=None, lora_high=None):
     """
     Main processing loop:
     1. Scans INPUT_DIR for images.
@@ -115,7 +115,10 @@ async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callb
                 seed_strategy=seed_strategy,
                 base_seed=base_seed,
                 width=width,
-                height=height
+                height=height,
+                lora_name=lora_name,
+                lora_low=lora_low,
+                lora_high=lora_high
             )
             
             if execution_id:
@@ -156,6 +159,9 @@ if __name__ == "__main__":
     parser.add_argument("--width", default="1024", help="Image width")
     parser.add_argument("--height", default="1600", help="Image height")
     parser.add_argument("--vision_model", default="gpt-4o", help="Vision model (gpt-4o/grok-2-vision-1212)")
+    parser.add_argument("--lora_name", default=None, help="LoRA name override for Turbo")
+    parser.add_argument("--lora_low", default=None, help="Low LoRA override for WAN")
+    parser.add_argument("--lora_high", default=None, help="High LoRA override for WAN")
     args = parser.parse_args()
     
-    asyncio.run(main(persona=args.persona, workflow_type=args.workflow, limit=args.limit, strength_model=args.strength_model, seed_strategy=args.seed_strategy, base_seed=args.base_seed, width=args.width, height=args.height, vision_model=args.vision_model))
+    asyncio.run(main(persona=args.persona, workflow_type=args.workflow, limit=args.limit, strength_model=args.strength_model, seed_strategy=args.seed_strategy, base_seed=args.base_seed, width=args.width, height=args.height, vision_model=args.vision_model, lora_name=args.lora_name, lora_low=args.lora_low, lora_high=args.lora_high))

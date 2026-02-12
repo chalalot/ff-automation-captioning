@@ -28,6 +28,8 @@ except ImportError:
     from scripts.process_and_queue import main as run_process_script
     from scripts.populate_generated_images import main as run_populate_script
 
+from src.third_parties.comfyui_client import ComfyUIClient, PERSONA_LORA_MAPPING_TURBO, PERSONA_LORA_MAPPING_WAN
+
 # Page Config
 st.set_page_config(page_title="Workspace - CrewAI Image Workflow", layout="wide")
 
@@ -63,6 +65,38 @@ elif "gemini-3-flash" in vision_model_choice:
 
 limit_choice = st.sidebar.number_input("Batch Limit", min_value=1, max_value=1000, value=10)
 strength_model = st.sidebar.slider("Model Strength", min_value=0.0, max_value=2.0, value=0.8, step=0.1)
+
+# LoRA Configuration
+st.sidebar.subheader("LoRA Configuration")
+lora_name_override = None
+lora_low_override = None
+lora_high_override = None
+
+if workflow_choice == "Turbo":
+    # Get default
+    default_lora = PERSONA_LORA_MAPPING_TURBO.get(kol_persona, "")
+    # Display input
+    lora_name_override = st.sidebar.text_input(
+        "LoRA Name", 
+        value=default_lora, 
+        key=f"lora_turbo_{kol_persona}"
+    )
+elif workflow_choice == "WAN2.2":
+    # Get defaults
+    wan_config = PERSONA_LORA_MAPPING_WAN.get(kol_persona, {"low": "", "high": ""})
+    default_low = wan_config.get("low", "")
+    default_high = wan_config.get("high", "")
+    
+    lora_low_override = st.sidebar.text_input(
+        "Low LoRA Name", 
+        value=default_low, 
+        key=f"lora_wan_low_{kol_persona}"
+    )
+    lora_high_override = st.sidebar.text_input(
+        "High LoRA Name", 
+        value=default_high, 
+        key=f"lora_wan_high_{kol_persona}"
+    )
 
 # Dimensions Configuration
 width = st.sidebar.text_input("Width", value="1024")
@@ -343,8 +377,6 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
                     if 'logger' in locals():
                         logger.write(f"\nERROR: {e}")
 
-from src.third_parties.comfyui_client import ComfyUIClient
-
 # --- 1. Input Configuration (Sorted Images) ---
 st.header("1. Input Configuration & Management")
 st.info(f"Monitoring Input Directory: `{INPUT_DIR}`")
@@ -558,7 +590,10 @@ with col1:
                         base_seed=base_seed,
                         width=width,
                         height=height,
-                        vision_model=vision_model
+                        vision_model=vision_model,
+                        lora_name=lora_name_override,
+                        lora_low=lora_low_override,
+                        lora_high=lora_high_override
                     ))
                     process_status_placeholder.success("Batch processing complete!")
                     st.success("Batch processing complete! Check logs above for details.")
