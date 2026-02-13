@@ -1,8 +1,10 @@
 import os
 from pathlib import Path
 from typing import Dict, List, Any
-from crewai import Agent, Task, Crew, Process
+from crewai import Agent, Task, Crew, Process, LLM
 from src.tools.vision_tool import VisionTool
+from src.config import GlobalConfig
+import os
 
 class VideoStoryboardWorkflow:
     """
@@ -13,10 +15,62 @@ class VideoStoryboardWorkflow:
     def __init__(self, verbose: bool = True, vision_model: str = "gpt-4o"):
         self.verbose = verbose
         self.vision_model = vision_model
+        self.llm = self._initialize_llm(vision_model)
+        
         self.concept_ideator = self._create_concept_ideator()
         self.prompt_generator = self._create_prompt_generator()
         # Visual Analyst to understand the starting frame
         self.analyst = self._create_analyst()
+
+    def _initialize_llm(self, model_name: str):
+        if model_name.lower().startswith("grok"):
+            import litellm
+            # DISABLE LiteLLM Telemetry & Callbacks
+            litellm.telemetry = False
+            litellm.turn_off_message_logging = True
+            litellm.suppress_debug_info = True
+            litellm.success_callback = []
+            litellm.failure_callback = []
+            
+            # FORCE Environment Variables for LiteLLM
+            original_api_key = os.environ.get("OPENAI_API_KEY")
+            original_api_base = os.environ.get("OPENAI_API_BASE")
+
+            if GlobalConfig.GROK_API_KEY:
+                os.environ["OPENAI_API_KEY"] = GlobalConfig.GROK_API_KEY
+                os.environ["OPENAI_API_BASE"] = "https://api.x.ai/v1"
+            
+            try:
+                llm = LLM(
+                    model="openai/" + model_name,
+                    base_url="https://api.x.ai/v1",
+                    api_key=GlobalConfig.GROK_API_KEY
+                )
+                print(f"Using Grok LLM ({model_name}) for Agents")
+                return llm
+            finally:
+                # Restore original environment variables
+                if original_api_key:
+                    os.environ["OPENAI_API_KEY"] = original_api_key
+                elif "OPENAI_API_KEY" in os.environ:
+                    del os.environ["OPENAI_API_KEY"]
+                
+                if original_api_base:
+                    os.environ["OPENAI_API_BASE"] = original_api_base
+                elif "OPENAI_API_BASE" in os.environ:
+                    del os.environ["OPENAI_API_BASE"]
+
+        elif model_name.lower().startswith("gemini"):
+            llm = LLM(
+                model="gemini/" + model_name,
+                api_key=GlobalConfig.GEMINI_API_KEY
+            )
+            print(f"Using Gemini LLM ({model_name}) for Agents")
+            return llm
+        
+        else:
+            print(f"Using default LLM ({model_name}) for Agents")
+            return model_name # "gpt-4o"
 
     def _create_analyst(self) -> Agent:
         # Load backstory
@@ -35,11 +89,11 @@ class VideoStoryboardWorkflow:
             role='Lead Visual Analyst',
             goal='Analyze reference images to extract objective visual details.',
             backstory=backstory_content,
-            tools=[VisionTool()],
+            tools=[VisionTool(model_name=self.vision_model)],
             verbose=self.verbose,
             allow_delegation=False,
             memory=False,
-            llm=self.vision_model
+            llm=self.llm
         )
 
     def _create_concept_ideator(self) -> Agent:
@@ -61,7 +115,7 @@ class VideoStoryboardWorkflow:
             verbose=self.verbose,
             allow_delegation=False,
             memory=False,
-            llm=self.vision_model
+            llm=self.llm
         )
 
     def _create_prompt_generator(self) -> Agent:
@@ -83,7 +137,7 @@ class VideoStoryboardWorkflow:
             verbose=self.verbose,
             allow_delegation=False,
             memory=False,
-            llm=self.vision_model
+            llm=self.llm
         )
 
     def process(self, image_path: str, persona_name: str = "Jennie", var_count: int = 3) -> Dict[str, Any]:
