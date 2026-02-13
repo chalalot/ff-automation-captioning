@@ -43,6 +43,21 @@ RAW_VIDEO_DIR = os.path.join(OUTPUT_DIR, "raw_video")
 # Sidebar Configuration for Persona (Removed)
 kol_persona = "Jennie"
 
+# Vision Model Selection
+vision_model_choice = st.sidebar.selectbox(
+    "Vision Model", 
+    [
+        "ChatGPT (gpt-4o)", 
+        "Grok (grok-2-vision-1212)", 
+        "Gemini 3 Flash (gemini-3-flash-preview)"
+    ]
+)
+vision_model = "gpt-4o"
+if "Grok" in vision_model_choice:
+    vision_model = "grok-2-vision-1212"
+elif "gemini-3-flash" in vision_model_choice:
+    vision_model = "gemini-3-flash-preview"
+
 st.markdown("Select source images, configure variation counts, and queue for video generation.")
 
 # --- Helper Functions ---
@@ -396,7 +411,7 @@ with tab_create:
                     print(f"\nProcessing Image {img_idx+1}/{total_items}: {os.path.basename(item['path'])}")
                     
                     try:
-                        workflow = VideoStoryboardWorkflow(verbose=True)
+                        workflow = VideoStoryboardWorkflow(verbose=True, vision_model=vision_model)
                         result = workflow.process(item['path'], kol_persona, var_count=item['var_count'])
                         
                         # Store result keyed by item ID

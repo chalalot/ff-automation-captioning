@@ -10,8 +10,9 @@ class VideoStoryboardWorkflow:
     based on a single starting image.
     """
 
-    def __init__(self, verbose: bool = True):
+    def __init__(self, verbose: bool = True, vision_model: str = "gpt-4o"):
         self.verbose = verbose
+        self.vision_model = vision_model
         self.concept_ideator = self._create_concept_ideator()
         self.prompt_generator = self._create_prompt_generator()
         # Visual Analyst to understand the starting frame
@@ -38,7 +39,7 @@ class VideoStoryboardWorkflow:
             verbose=self.verbose,
             allow_delegation=False,
             memory=False,
-            llm="gpt-4o"
+            llm=self.vision_model
         )
 
     def _create_concept_ideator(self) -> Agent:
@@ -60,7 +61,7 @@ class VideoStoryboardWorkflow:
             verbose=self.verbose,
             allow_delegation=False,
             memory=False,
-            llm="gpt-4o"
+            llm=self.vision_model
         )
 
     def _create_prompt_generator(self) -> Agent:
@@ -82,7 +83,7 @@ class VideoStoryboardWorkflow:
             verbose=self.verbose,
             allow_delegation=False,
             memory=False,
-            llm="gpt-4o"
+            llm=self.vision_model
         )
 
     def process(self, image_path: str, persona_name: str = "Jennie", var_count: int = 3) -> Dict[str, Any]:
