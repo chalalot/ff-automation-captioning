@@ -17,3 +17,4 @@ email-validator
 fastapi-sso
 streamlit-sortables
 crewai[google-genai]
+psutil
