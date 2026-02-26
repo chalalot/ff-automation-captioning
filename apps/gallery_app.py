@@ -7,6 +7,7 @@ import zipfile
 import io
 import pandas as pd
 import math
+import time
 from datetime import datetime
 from PIL import Image
 
@@ -142,6 +143,27 @@ def extract_metadata_from_image(file_path, mtime=None):
 
 # --- Persistence & State Logic ---
 APPROVALS_FILE = os.path.join(OUTPUT_DIR, "approvals.json")
+NOTES_FILE = os.path.join(OUTPUT_DIR, "daily_notes.json")
+
+def load_notes():
+    if os.path.exists(NOTES_FILE):
+        try:
+            with open(NOTES_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_note(date_str, note_text):
+    notes = load_notes()
+    notes[date_str] = note_text
+    try:
+        with open(NOTES_FILE, "w") as f:
+            json.dump(notes, f, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"Failed to save note: {e}")
+        return False
 
 # Initialize Session State for Approvals and Selections
 if "approved_files" not in st.session_state:
@@ -411,6 +433,57 @@ if os.path.exists(OUTPUT_DIR):
     # Load data (cached)
     gallery_items = load_gallery_data(OUTPUT_DIR)
     
+    # --- Daily Stats & Notes Section ---
+    with st.expander("📊 Daily Stats & Notes", expanded=True):
+        col_stats, col_notes = st.columns([1, 2])
+        
+        # Calculate Stats
+        stats_by_date = {}
+        for item in gallery_items:
+            d = item['date']
+            stats_by_date[d] = stats_by_date.get(d, 0) + 1
+            
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_count = stats_by_date.get(today_str, 0)
+        
+        with col_stats:
+            st.metric("Images Generated Today", today_count)
+            
+            st.markdown("#### History")
+            # Convert to DF for display
+            if stats_by_date:
+                df_stats = pd.DataFrame(list(stats_by_date.items()), columns=['Date', 'Count'])
+                df_stats = df_stats.sort_values('Date', ascending=False)
+                st.dataframe(df_stats, hide_index=True, use_container_width=True, height=200)
+            else:
+                st.info("No generation history.")
+
+        with col_notes:
+            st.markdown("#### 📝 Daily Notes")
+            
+            # Date selector for notes
+            available_dates = sorted(list(stats_by_date.keys()), reverse=True)
+            if not available_dates:
+                available_dates = [today_str]
+            elif today_str not in available_dates:
+                available_dates.insert(0, today_str)
+                
+            selected_note_date = st.selectbox("Select Date", available_dates)
+            
+            # Load existing note
+            all_notes = load_notes()
+            current_note = all_notes.get(selected_note_date, "")
+            
+            # Note Editor
+            new_note = st.text_area(f"Notes for {selected_note_date}", value=current_note, height=150, placeholder="Record prompt ideas, settings used, or general observations for this batch...")
+            
+            if st.button("Save Note"):
+                if save_note(selected_note_date, new_note):
+                    st.success(f"Note for {selected_note_date} saved!")
+                    # Force reload of notes (optional if we just rely on rerun)
+                    time.sleep(0.5)
+                    st.rerun()
+
     if not gallery_items:
             st.info("No results found yet.")
     else:

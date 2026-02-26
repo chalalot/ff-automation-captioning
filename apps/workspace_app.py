@@ -8,6 +8,9 @@ import contextlib
 import json
 import math
 import logging
+import threading
+import time
+from datetime import datetime
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -120,6 +123,35 @@ os.makedirs(PROCESSED_DIR, exist_ok=True)
 
 # Initialize Components
 storage = ImageLogsStorage()
+
+# --- Background Process for Auto-Check ---
+@st.cache_resource
+def start_background_checker():
+    """
+    Starts a background thread that checks for completed images every minute.
+    This runs once per session (singleton).
+    """
+    def background_loop():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        logging.info("Starting background auto-check loop...")
+        while True:
+            try:
+                # Run the populate script logic
+                loop.run_until_complete(run_populate_script())
+            except Exception as e:
+                logging.error(f"Error in background auto-check: {e}")
+            
+            # Wait for 1 minute
+            time.sleep(60)
+
+    thread = threading.Thread(target=background_loop, daemon=True)
+    thread.start()
+    return thread
+
+# Start the background checker
+checker_thread = start_background_checker()
 
 class StreamlitLogHandler(logging.Handler):
     def __init__(self, streamlit_logger):
@@ -608,13 +640,10 @@ with col1:
             st.rerun()
 
 with col2:
-    st.subheader("Step 2: Download Results")
+    st.subheader("Step 2: Auto-Download Results")
     st.markdown(f"Checks status of queued items and saves completed images to `{OUTPUT_DIR}`.")
     
-    if st.button("Download Completed Results"):
-        with st.spinner("Checking status and downloading..."):
-            try:
-                asyncio.run(run_populate_script())
-                st.success("Results updated!")
-            except Exception as e:
-                st.error(f"Failed to populate results: {e}")
+    st.info("🔄 **Auto-check is active.**\n\nThe system automatically checks for completed images every 1 minute in the background. You don't need to do anything.")
+    
+    # Optional: Display last check time if we were tracking it in a shared state, 
+    # but for now a simple static message suffices as requested.
