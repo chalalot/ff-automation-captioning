@@ -8,6 +8,7 @@ import io
 import pandas as pd
 import math
 import time
+import shutil
 from datetime import datetime
 from PIL import Image
 
@@ -22,42 +23,92 @@ from src.utils.streamlit_utils import get_sorted_images, fetch_remote_metadata
 # Page Config
 st.set_page_config(page_title="Gallery - CrewAI Image Workflow", layout="wide")
 
-st.title("🗂️ Results Gallery")
-
 # Constants
 OUTPUT_DIR = GlobalConfig.OUTPUT_DIR
+APPROVED_DIR = os.path.join(OUTPUT_DIR, "approved")
+DISAPPROVED_DIR = os.path.join(OUTPUT_DIR, "disapproved")
+
+# Ensure directories exist
+os.makedirs(APPROVED_DIR, exist_ok=True)
+os.makedirs(DISAPPROVED_DIR, exist_ok=True)
+
 storage = ImageLogsStorage()
 client = ComfyUIClient()
 
 # Session State Initialization
 if "results" not in st.session_state:
     st.session_state.results = []
-
-st.header(f"Results Gallery ({OUTPUT_DIR})")
+if "selected_files" not in st.session_state:
+    st.session_state.selected_files = set()
+if "files_to_approve" not in st.session_state:
+    st.session_state.files_to_approve = set()
 
 # --- Helper Functions ---
-@st.cache_data(ttl=30, show_spinner="Loading gallery data...")
-def load_gallery_data(output_dir):
+
+def move_image(filename, source_dir, dest_dir, new_name=None):
     """
-    Fetch DB records and file list, then merge them.
-    Cached to prevent lag on every interaction.
+    Moves an image from source to dest, optionally renaming it.
+    Returns True if successful, False otherwise.
     """
+    try:
+        src_path = os.path.join(source_dir, filename)
+        if not os.path.exists(src_path):
+            return False
+            
+        final_name = new_name if new_name else filename
+        if not final_name.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+            # Append extension from original if missing
+            ext = os.path.splitext(filename)[1]
+            final_name += ext
+            
+        dest_path = os.path.join(dest_dir, final_name)
+        
+        # Avoid overwriting
+        if os.path.exists(dest_path):
+            base, ext = os.path.splitext(final_name)
+            timestamp = int(time.time())
+            dest_path = os.path.join(dest_dir, f"{base}_{timestamp}{ext}")
+            
+        shutil.move(src_path, dest_path)
+        
+        # Also try to move corresponding text file if it exists
+        txt_src = os.path.splitext(src_path)[0] + ".txt"
+        if os.path.exists(txt_src):
+            txt_dest = os.path.splitext(dest_path)[0] + ".txt"
+            shutil.move(txt_src, txt_dest)
+            
+        return True
+    except Exception as e:
+        st.error(f"Error moving {filename}: {e}")
+        return False
+
+@st.cache_data(ttl=5, show_spinner="Loading gallery data...")
+def load_gallery_data(directory):
+    """
+    Fetch DB records and file list from a specific directory.
+    """
+    if not os.path.exists(directory):
+        return []
+
     # 1. Fetch all completed executions for metadata lookup
     all_executions = storage.get_all_completed_executions()
     execution_map = {}
     for exc in all_executions:
         if exc['result_image_path']:
-            # Normalize to filename
             fname = os.path.basename(exc['result_image_path'])
             execution_map[fname] = exc
     
-    # 2. List files and build data list
-    all_files = get_sorted_images(output_dir)
+    # 2. List files
+    all_files = get_sorted_images(directory)
     
     items = []
     for f in all_files:
-        full_path = os.path.join(output_dir, f)
-        mtime = os.path.getmtime(full_path)
+        full_path = os.path.join(directory, f)
+        try:
+            mtime = os.path.getmtime(full_path)
+        except OSError:
+            continue # File might have been moved
+            
         dt = datetime.fromtimestamp(mtime)
         date_str = dt.strftime("%Y-%m-%d")
         
@@ -65,7 +116,7 @@ def load_gallery_data(output_dir):
         record = execution_map.get(f)
         persona = record['persona'] if record and 'persona' in record and record['persona'] else "Unknown"
         
-        # Pre-calculate Reference Image Path (Heavy I/O)
+        # Pre-calculate Reference Image Path
         final_ref_path = None
         if record:
             ref_path = record.get('image_ref_path')
@@ -73,12 +124,10 @@ def load_gallery_data(output_dir):
                 if os.path.exists(ref_path):
                     final_ref_path = ref_path
                 else:
-                    # Fix Windows paths when running in Linux container
                     fixed_path = ref_path.replace('\\', '/')
                     if os.path.exists(fixed_path):
                         final_ref_path = fixed_path
                     else:
-                        # Fallback: Check if file exists in PROCESSED_DIR by filename
                         filename = os.path.basename(fixed_path)
                         fallback = os.path.join(GlobalConfig.PROCESSED_DIR, filename)
                         if os.path.exists(fallback):
@@ -95,11 +144,58 @@ def load_gallery_data(output_dir):
         })
     return items
 
+@st.cache_data(ttl=10, show_spinner=False)
+def get_all_stats():
+    """
+    Scans all folders to build aggregate statistics.
+    Returns a DataFrame.
+    """
+    stats = {} # Date -> {'total': 0, 'approved': 0}
+    
+    def scan_dir(directory, is_approved=False):
+        if not os.path.exists(directory): return
+        files = get_sorted_images(directory)
+        for f in files:
+            full_path = os.path.join(directory, f)
+            try:
+                mtime = os.path.getmtime(full_path)
+                dt = datetime.fromtimestamp(mtime)
+                date_str = dt.strftime("%Y-%m-%d")
+                
+                if date_str not in stats:
+                    stats[date_str] = {'total': 0, 'approved': 0}
+                
+                stats[date_str]['total'] += 1
+                if is_approved:
+                    stats[date_str]['approved'] += 1
+            except OSError:
+                continue
+
+    scan_dir(OUTPUT_DIR, is_approved=False)
+    scan_dir(APPROVED_DIR, is_approved=True)
+    scan_dir(DISAPPROVED_DIR, is_approved=False)
+    
+    data = []
+    for date_str, counts in stats.items():
+        total = counts['total']
+        approved = counts['approved']
+        ratio = (approved / total * 100) if total > 0 else 0
+        data.append({
+            "Date": date_str,
+            "Total Generated": total,
+            "Approved": approved,
+            "Approval Rate": f"{ratio:.1f}%"
+        })
+    
+    df = pd.DataFrame(data)
+    if not df.empty:
+        df = df.sort_values("Date", ascending=False)
+    return df
+
 @st.cache_data(show_spinner=False)
 def extract_metadata_from_image(file_path, mtime=None):
     """
     Extracts seed and prompt from ComfyUI image metadata.
-    Returns a dict with seed, prompt, and raw_metadata.
     """
     metadata = {
         "seed": None,
@@ -114,37 +210,28 @@ def extract_metadata_from_image(file_path, mtime=None):
                 prompt_data = json.loads(meta['prompt'])
                 metadata["raw_metadata"] = prompt_data
                 
-                # Traverse nodes to find seed and prompt
                 for node_id, node_data in prompt_data.items():
                     inputs = node_data.get('inputs', {})
                     class_type = node_data.get('class_type', '')
                     
-                    # Look for Seed
                     if metadata["seed"] is None:
                         if 'seed' in inputs:
                             metadata["seed"] = inputs['seed']
                         elif 'noise_seed' in inputs:
                             metadata["seed"] = inputs['noise_seed']
                     
-                    # Look for Prompt (Text)
-                    # Prioritize CLIPTextEncode or similar
                     if 'text' in inputs and isinstance(inputs['text'], str):
-                        # Simple heuristic: if it's a CLIPTextEncode node, it's likely the prompt
-                        # If we haven't found one yet, take it. 
-                        # Or if it's explicitly a CLIPTextEncode, overwrite whatever we found (maybe?)
-                        # Let's just take the first CLIPTextEncode we find, or the first text if no CLIPTextEncode found yet.
                         if 'CLIPTextEncode' in class_type or metadata["prompt"] is None:
                             metadata["prompt"] = inputs['text']
                             
     except Exception as e:
-        print(f"Error extracting metadata from {file_path}: {e}")
+        # print(f"Error extracting metadata from {file_path}: {e}")
+        pass
         
     return metadata
 
-# --- Persistence & State Logic ---
-APPROVALS_FILE = os.path.join(OUTPUT_DIR, "approvals.json")
+# --- Daily Notes Logic ---
 NOTES_FILE = os.path.join(OUTPUT_DIR, "daily_notes.json")
-
 def load_notes():
     if os.path.exists(NOTES_FILE):
         try:
@@ -165,410 +252,314 @@ def save_note(date_str, note_text):
         st.error(f"Failed to save note: {e}")
         return False
 
-# Initialize Session State for Approvals and Selections
-if "approved_files" not in st.session_state:
-    st.session_state.approved_files = set()
-    if os.path.exists(APPROVALS_FILE):
-        try:
-            with open(APPROVALS_FILE, "r") as f:
-                saved = json.load(f)
-                st.session_state.approved_files = set(saved)
-        except Exception:
-            pass
-
-if "selected_files" not in st.session_state:
-    st.session_state.selected_files = set()
-
-def update_approvals_file():
-    try:
-        with open(APPROVALS_FILE, "w") as f:
-            json.dump(list(st.session_state.approved_files), f)
-    except Exception as e:
-        st.error(f"Failed to save approvals: {e}")
-
-def toggle_approval(base_name):
-    if base_name in st.session_state.approved_files:
-        st.session_state.approved_files.remove(base_name)
-    else:
-        st.session_state.approved_files.add(base_name)
-    update_approvals_file()
-
 def toggle_selection(filename):
     if filename in st.session_state.selected_files:
         st.session_state.selected_files.remove(filename)
     else:
         st.session_state.selected_files.add(filename)
 
+def toggle_approve_status(filename):
+    if filename in st.session_state.files_to_approve:
+        st.session_state.files_to_approve.remove(filename)
+    else:
+        st.session_state.files_to_approve.add(filename)
+
 # --- Fragment for Gallery View ---
 @st.fragment
-def view_gallery_fragment(filtered_items, group_by_date):
+def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
     """
-    Renders the gallery grid, pagination, and batch actions in a fragment.
-    Updates here will not cause a full page reload.
+    Renders the gallery grid for a specific tab.
+    current_tab: 'wait', 'approved', 'disapproved'
     """
-    
-    # --- Pagination ---
-    total_items = len(filtered_items)
-    paginated_items = []
+    if not items:
+        st.info("No images match current filters.")
+        return
 
-    if total_items > 0:
-        col_p1, col_p2, col_p3 = st.columns([1, 2, 2])
-        with col_p1:
-            items_per_page = st.selectbox("Images per page", [20, 50, 100, 200], index=1)
-        
-        total_pages = math.ceil(total_items / items_per_page)
-        
-        if "gallery_page" not in st.session_state:
-            st.session_state.gallery_page = 1
-            
-        # Ensure valid page
-        if st.session_state.gallery_page > total_pages:
-            st.session_state.gallery_page = total_pages
-        if st.session_state.gallery_page < 1:
-            st.session_state.gallery_page = 1
-            
-        with col_p2:
-            st.session_state.gallery_page = st.number_input(
-                f"Page (Total: {total_pages})", 
-                min_value=1, 
-                max_value=total_pages, 
-                value=st.session_state.gallery_page
-            )
-        
-        with col_p3:
-            st.caption(f"Total Images: {total_items}")
-
-        start_idx = (st.session_state.gallery_page - 1) * items_per_page
-        end_idx = start_idx + items_per_page
-        
-        paginated_items = filtered_items[start_idx:end_idx]
-        
-        st.caption(f"Showing images {start_idx + 1}-{min(end_idx, total_items)} of {total_items}")
-    else:
-        paginated_items = []
-        st.info("No matching images found.")
-
-    # --- Batch Actions ---
-    selected_files = st.session_state.selected_files
-    
-    # Filter valid files from selection (in case files were deleted but still in session)
-    valid_selected = [f for f in selected_files if os.path.exists(os.path.join(OUTPUT_DIR, f))]
-    
-    if valid_selected:
-        st.info(f"Selected {len(valid_selected)} images.")
-        
-        with st.container():
-            col_b1, col_b2, col_b3 = st.columns([2, 2, 4])
-            
-            with col_b1:
-                include_txt = st.toggle("Include Metadata (.txt)", value=True)
-                if st.button("Download Selected"):
-                    with st.spinner("Preparing ZIP..."):
-                        # Helper to fetch prompts
-                        async def fetch_prompts_map(files):
-                            results = {}
-                            async def fetch_single(f_path):
-                                try:
-                                    record = storage.get_execution_by_result_path(str(f_path))
-                                    if not record or not record.get('execution_id'): return None
-                                    ex_id = record['execution_id']
-                                    details = await client.get_execution_details(ex_id)
-                                    prompt_content = details.get('prompt')
-                                    if prompt_content is None:
-                                        if 'input_overrides' in details and 'positive_prompt' in details['input_overrides']:
-                                            prompt_content = details['input_overrides']['positive_prompt']
-                                        elif 'prompt' in record:
-                                            prompt_content = record['prompt']
-                                    return prompt_content
-                                except Exception:
-                                    if record and 'prompt' in record: return record['prompt']
-                                    return None
-
-                            full_paths = [os.path.join(OUTPUT_DIR, f) for f in files]
-                            tasks = [fetch_single(fp) for fp in full_paths]
-                            fetched_prompts = await asyncio.gather(*tasks)
+    # --- Batch Actions for Wait Tab ---
+    if current_tab == 'wait':
+        col_actions, _ = st.columns([2, 1])
+        with col_actions:
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("✅ Approve Selected", type="primary", use_container_width=True):
+                    count = 0
+                    for item in items:
+                        fname = item['filename']
+                        # Check if marked for approval
+                        if fname in st.session_state.files_to_approve:
+                            # Get rename value if any
+                            new_name = st.session_state.get(f"rename_{fname}", "").strip()
+                            if not new_name: new_name = None
                             
-                            for fname, p_content in zip(files, fetched_prompts):
-                                if p_content: results[fname] = p_content
-                            return results
+                            if move_image(fname, context_dir, APPROVED_DIR, new_name):
+                                count += 1
+                                # Cleanup state
+                                if fname in st.session_state.files_to_approve:
+                                    st.session_state.files_to_approve.remove(fname)
+                    
+                    if count > 0:
+                        st.success(f"Moved {count} images to Approved.")
+                        load_gallery_data.clear()
+                        get_all_stats.clear() # Clear stats cache too
+                        st.rerun()
+                    else:
+                        st.warning("No images selected for approval.")
 
-                        prompts_map = {}
-                        if include_txt:
-                            prompts_map = asyncio.run(fetch_prompts_map(valid_selected))
+            with c2:
+                if st.button("🗑️ Disapprove Remaining", type="secondary", use_container_width=True):
+                     # Disapprove everything NOT marked for approval
+                    count = 0
+                    for item in items:
+                        fname = item['filename']
+                        if fname not in st.session_state.files_to_approve:
+                            if move_image(fname, context_dir, DISAPPROVED_DIR):
+                                count += 1
+                    
+                    if count > 0:
+                        st.success(f"Moved {count} remaining images to Disapproved.")
+                        load_gallery_data.clear()
+                        get_all_stats.clear()
+                        st.rerun()
 
-                        zip_buffer = io.BytesIO()
-                        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                            for fname in valid_selected:
-                                full_path = os.path.join(OUTPUT_DIR, fname)
-                                zf.write(full_path, arcname=fname)
-                                
-                                if include_txt and fname in prompts_map:
-                                    base_name = os.path.splitext(fname)[0]
-                                    txt_filename = f"{base_name}.txt"
-                                    content = prompts_map[fname]
-                                    txt_content = json.dumps(content, indent=2) if isinstance(content, (dict, list)) else str(content)
-                                    zf.writestr(txt_filename, txt_content)
-                        
-                        st.session_state['batch_zip_buffer'] = zip_buffer.getvalue()
-                        st.success("Ready for download!")
-                
-                if 'batch_zip_buffer' in st.session_state and st.session_state.get('batch_zip_buffer'):
-                    st.download_button("Download ZIP", st.session_state['batch_zip_buffer'], "selected_images.zip", "application/zip")
+    # --- Pagination ---
+    items_per_page = 20
+    total_items = len(items)
+    total_pages = math.ceil(total_items / items_per_page)
+    
+    # Simple pagination key based on tab
+    page_key = f"page_{current_tab}"
+    if page_key not in st.session_state:
+        st.session_state[page_key] = 1
+        
+    col_p1, col_p2 = st.columns([1, 4])
+    with col_p1:
+        if total_pages > 1:
+            st.session_state[page_key] = st.number_input(
+                f"Page ({total_pages})", 
+                min_value=1, max_value=total_pages, 
+                value=st.session_state[page_key],
+                key=f"num_{page_key}"
+            )
+    
+    start_idx = (st.session_state[page_key] - 1) * items_per_page
+    end_idx = start_idx + items_per_page
+    paginated_items = items[start_idx:end_idx]
 
-            with col_b2:
-                if st.button("Delete Selected", type="primary"):
-                    st.session_state.confirm_batch_delete = True
-                
-                if st.session_state.get("confirm_batch_delete", False):
-                    st.warning(f"Delete {len(valid_selected)} files?")
-                    col_conf1, col_conf2 = st.columns(2)
-                    with col_conf1:
-                        if st.button("Yes, Delete"):
-                            deleted = 0
-                            for fname in valid_selected:
-                                try:
-                                    os.remove(os.path.join(OUTPUT_DIR, fname))
-                                    st.session_state.selected_files.remove(fname)
-                                    deleted += 1
-                                except Exception as e:
-                                    st.error(f"Error deleting {fname}: {e}")
-                            st.success(f"Deleted {deleted} files.")
-                            st.session_state.confirm_batch_delete = False
-                            # We need to trigger a full rerun to refresh the list of files from disk
-                            st.rerun()
-                    with col_conf2:
-                        if st.button("Cancel Delete"):
-                            st.session_state.confirm_batch_delete = False
-                            st.rerun() # Re-render fragment to hide warning
-
-    # --- Rendering Helper ---
-    def render_grid(items):
+    # --- Grid Render Helper ---
+    def render_grid(grid_items):
         cols_per_row = 4
-        for i in range(0, len(items), cols_per_row):
-            row_items = items[i:i+cols_per_row]
+        for i in range(0, len(grid_items), cols_per_row):
+            row_items = grid_items[i:i+cols_per_row]
             cols = st.columns(cols_per_row)
             for idx, item in enumerate(row_items):
                 with cols[idx]:
                     try:
-                        st.image(item['path'], caption=item['filename'], width='stretch')
-                    except Exception as e:
-                        st.error(f"Error loading image: {item['filename']}")
-                        st.caption(f"Path: {item['path']}")
+                        st.image(item['path'], width=None, use_container_width=True)
+                    except Exception:
+                        st.error("Error loading image")
                         continue
-                        
-                    base_name = os.path.splitext(item['filename'])[0]
                     
-                    # Controls
-                    c1, c2 = st.columns([1, 3])
-                    with c1:
-                        # Selection Checkbox
-                        st.checkbox("Sel", 
-                            key=f"select_{item['filename']}", 
-                            value=item['filename'] in st.session_state.selected_files,
-                            on_change=toggle_selection,
-                            args=(item['filename'],)
-                        )
-                    with c2:
-                        # Approve Checkbox
-                        st.checkbox("Approve", 
-                            key=f"approve_{base_name}", 
-                            value=base_name in st.session_state.approved_files,
-                            on_change=toggle_approval,
-                            args=(base_name,)
-                        )
+                    fname = item['filename']
+                    base_name = os.path.splitext(fname)[0]
+
+                    # Tab Specific Controls
+                    if current_tab == 'wait':
+                        # Checkbox for Approval & Delete Button
+                        c_chk, c_del = st.columns([4, 1])
+                        with c_chk:
+                            is_approved = fname in st.session_state.files_to_approve
+                            st.checkbox("Approve", value=is_approved, key=f"chk_{fname}", on_change=toggle_approve_status, args=(fname,))
+                        with c_del:
+                            if st.button("🗑️", key=f"del_{fname}", help="Delete Permanently"):
+                                try:
+                                    os.remove(item['path'])
+                                    txt_path = os.path.splitext(item['path'])[0] + ".txt"
+                                    if os.path.exists(txt_path):
+                                        os.remove(txt_path)
+                                    st.toast(f"Deleted {fname}")
+                                    load_gallery_data.clear()
+                                    get_all_stats.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error deleting: {e}")
+
+                        # Rename Input
+                        st.text_input("Rename:", value=base_name, key=f"rename_{fname}", label_visibility="collapsed", placeholder="Rename...")
                     
-                    with st.popover("View Metadata"):
-                        # Extract Image Metadata (Seed & Prompt)
+                    elif current_tab == 'approved':
+                        if st.button("Undo (Move to Wait)", key=f"undo_{fname}"):
+                            move_image(fname, context_dir, OUTPUT_DIR)
+                            load_gallery_data.clear()
+                            get_all_stats.clear()
+                            st.rerun()
+                        if st.button("Move to Disapproved", key=f"reject_{fname}"):
+                            move_image(fname, context_dir, DISAPPROVED_DIR)
+                            load_gallery_data.clear()
+                            get_all_stats.clear()
+                            st.rerun()
+
+                    elif current_tab == 'disapproved':
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            if st.button("Recover", key=f"rec_{fname}"):
+                                move_image(fname, context_dir, OUTPUT_DIR)
+                                load_gallery_data.clear()
+                                get_all_stats.clear()
+                                st.rerun()
+                        with c2:
+                            if st.button("Approve", key=f"app_from_dis_{fname}"):
+                                move_image(fname, context_dir, APPROVED_DIR)
+                                load_gallery_data.clear()
+                                get_all_stats.clear()
+                                st.rerun()
+
+                    # Metadata Popover
+                    with st.popover("Details"):
+                        st.caption(fname)
                         img_meta = extract_metadata_from_image(item['path'], item['mtime'])
                         
                         if img_meta['seed'] is not None:
                             st.write(f"**Seed:** `{img_meta['seed']}`")
-                        
                         if img_meta['prompt']:
                             st.caption("**Prompt:**")
                             st.text(img_meta['prompt'])
                         
                         st.divider()
-
-                        db_record = item['record']
-                        if db_record:
+                        
+                        if item['record']:
                             st.write(f"**Persona:** {item['persona']}")
-                            st.write(f"**Execution ID:** `{db_record['execution_id']}`")
-                            st.write(f"**Status:** {db_record['status']}")
-                            
-                            # Use pre-calculated ref_path
-                            ref_path = item.get('ref_path')
-                            if ref_path:
-                                st.image(ref_path, caption="Reference Image", width=200)
-                            
-                            if st.button("Fetch Remote Details", key=f"fetch_{base_name}"):
-                                with st.spinner("Fetching details..."):
-                                    remote = asyncio.run(fetch_remote_metadata(client, db_record['execution_id']))
-                                    if remote: st.json(remote)
-                        else:
-                            st.warning("No database record found.")
+                            if item.get('ref_path'):
+                                st.image(item['ref_path'], caption="Reference", width=150)
                         
                         if img_meta['raw_metadata']:
-                            with st.expander("View Full Metadata"):
+                            with st.expander("Full Metadata"):
                                 st.json(img_meta['raw_metadata'])
 
     # --- Grouping Logic ---
-    if group_by_date:
-        # Group by date string
-        # Note: items are already sorted by time
+    if grouping_mode == "Date":
         grouped = {}
         for item in paginated_items:
             d = item['date']
             if d not in grouped: grouped[d] = []
             grouped[d].append(item)
         
-        # Render groups
         for date_key in grouped:
             st.subheader(f"📅 {date_key}")
             render_grid(grouped[date_key])
+            
+    elif grouping_mode == "Batch (Reference)":
+        grouped = {}
+        for item in paginated_items:
+            ref_path = item.get('ref_path')
+            key = ref_path if ref_path else "Unknown Reference"
+            if key not in grouped: grouped[key] = []
+            grouped[key].append(item)
+            
+        group_list = []
+        for key, g_items in grouped.items():
+            max_mtime = max(i['mtime'] for i in g_items)
+            group_list.append((key, g_items, max_mtime))
+        group_list.sort(key=lambda x: x[2], reverse=True)
+        
+        for key, g_items, _ in group_list:
+            st.markdown(f"#### Batch: {os.path.basename(key) if key != 'Unknown Reference' else 'Unknown'}")
+            if key != "Unknown Reference" and os.path.exists(key):
+                st.image(key, width=100)
+            render_grid(g_items)
+            st.divider()
+
     else:
         render_grid(paginated_items)
 
-# -------------------------
 
-if st.button("Refresh Gallery"):
-    load_gallery_data.clear()
-    st.rerun()
+# --- Main App Layout ---
 
-if os.path.exists(OUTPUT_DIR):
-    # Load data (cached)
-    gallery_items = load_gallery_data(OUTPUT_DIR)
-    
-    # --- Daily Stats & Notes Section ---
-    with st.expander("📊 Daily Stats & Notes", expanded=True):
-        col_stats, col_notes = st.columns([1, 2])
-        
-        # Calculate Stats
-        stats_by_date = {}
-        for item in gallery_items:
-            d = item['date']
-            stats_by_date[d] = stats_by_date.get(d, 0) + 1
-            
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        today_count = stats_by_date.get(today_str, 0)
-        
-        with col_stats:
-            st.metric("Images Generated Today", today_count)
-            
-            st.markdown("#### History")
-            # Convert to DF for display
-            if stats_by_date:
-                df_stats = pd.DataFrame(list(stats_by_date.items()), columns=['Date', 'Count'])
-                df_stats = df_stats.sort_values('Date', ascending=False)
-                st.dataframe(df_stats, hide_index=True, width=1000, height=200)
-            else:
-                st.info("No generation history.")
+col_title, col_refresh = st.columns([4, 1])
+with col_title:
+    st.title("🗂️ Results Gallery")
+with col_refresh:
+    if st.button("🔄 Refresh All", type="primary", use_container_width=True):
+        load_gallery_data.clear()
+        get_all_stats.clear()
+        st.rerun()
 
-        with col_notes:
-            st.markdown("#### 📝 Daily Notes")
-            
-            # Date selector for notes
-            available_dates = sorted(list(stats_by_date.keys()), reverse=True)
-            if not available_dates:
-                available_dates = [today_str]
-            elif today_str not in available_dates:
-                available_dates.insert(0, today_str)
-                
-            selected_note_date = st.selectbox("Select Date", available_dates)
-            
-            # Load existing note
-            all_notes = load_notes()
-            current_note = all_notes.get(selected_note_date, "")
-            
-            # Note Editor
-            new_note = st.text_area(f"Notes for {selected_note_date}", value=current_note, height=150, placeholder="Record prompt ideas, settings used, or general observations for this batch...")
-            
-            if st.button("Save Note"):
-                if save_note(selected_note_date, new_note):
-                    st.success(f"Note for {selected_note_date} saved!")
-                    # Force reload of notes (optional if we just rely on rerun)
-                    time.sleep(0.5)
-                    st.rerun()
-
-    if not gallery_items:
-            st.info("No results found yet.")
-    else:
-        # --- Gallery Settings ---
-        with st.expander("🛠️ Gallery Settings", expanded=False):
-            col_f1, col_f2, col_f3 = st.columns(3)
-            
-            with col_f1:
-                # Persona Filter
-                all_personas = sorted(list(set(item['persona'] for item in gallery_items)))
-                selected_personas = st.multiselect("Filter by Persona", all_personas, default=[])
-            
-            with col_f2:
-                # Sort Order
-                sort_order = st.selectbox("Sort By", ["Newest First", "Oldest First"])
-            
-            with col_f3:
-                # Grouping
-                group_by_date = st.toggle("Group by Date", value=True)
-
-        # --- Maintenance ---
-        with st.expander("🗑️ Maintenance", expanded=False):
-            st.write("Manage unused (unapproved) images.")
-            
-            # Calculate unused
-            all_bases = set(os.path.splitext(f)[0] for f in get_sorted_images(OUTPUT_DIR))
-            approved_bases = st.session_state.approved_files
-            unused_bases = all_bases - approved_bases
-            
-            col_m1, col_m2 = st.columns([1, 1])
-            with col_m1:
-                st.metric("Total Images", len(all_bases))
-            with col_m2:
-                st.metric("Unused Images", len(unused_bases))
-                
-            if unused_bases:
-                if st.button("Delete All Unused Images", type="primary"):
-                    st.session_state.confirm_delete_unused = True
-                
-                if st.session_state.get("confirm_delete_unused", False):
-                    st.warning(f"Are you sure you want to delete {len(unused_bases)} images? This cannot be undone.")
-                    col_confirm_1, col_confirm_2 = st.columns(2)
-                    with col_confirm_1:
-                        if st.button("Yes, Delete Everything"):
-                            deleted_count = 0
-                            for base in unused_bases:
-                                # Find files starting with this base (to cover extensions)
-                                for f in os.listdir(OUTPUT_DIR):
-                                    if os.path.splitext(f)[0] == base:
-                                        try:
-                                            os.remove(os.path.join(OUTPUT_DIR, f))
-                                            deleted_count += 1
-                                        except Exception as e:
-                                            st.error(f"Error deleting {f}: {e}")
-                            
-                            st.success(f"Deleted {deleted_count} files.")
-                            st.session_state.confirm_delete_unused = False
-                            load_gallery_data.clear()
-                            st.rerun()
-                    
-                    with col_confirm_2:
-                        if st.button("Cancel"):
-                            st.session_state.confirm_delete_unused = False
-                            st.rerun()
-
-        # --- Filtering & Sorting ---
-        filtered_items = gallery_items
-        if selected_personas:
-            filtered_items = [item for item in filtered_items if item['persona'] in selected_personas]
-        
-        # Sort
-        reverse_sort = (sort_order == "Newest First")
-        filtered_items.sort(key=lambda x: x['mtime'], reverse=reverse_sort)
-        
-        st.write(f"Showing {len(filtered_items)} images.")
-        
-        # --- RENDER FRAGMENT ---
-        # Pass the prepared items to the fragment
-        view_gallery_fragment(filtered_items, group_by_date)
-
+# 1. Statistics Table
+st.markdown("### 📊 Generation Statistics")
+df_stats = get_all_stats()
+if not df_stats.empty:
+    st.dataframe(
+        df_stats, 
+        hide_index=True, 
+        use_container_width=True,
+        column_config={
+            "Approval Rate": st.column_config.ProgressColumn(
+                "Approval Rate",
+                help="Percentage of generated images that were approved",
+                format="%f",
+                min_value=0,
+                max_value=100,
+            ),
+        }
+    )
 else:
-    st.error(f"Output directory '{OUTPUT_DIR}' does not exist.")
+    st.info("No statistics available yet.")
+
+st.divider()
+
+# 2. Global Controls (Filters & Grouping)
+with st.expander("🛠️ Filters & Settings", expanded=True):
+    col_f1, col_f2 = st.columns(2)
+    
+    # We need all unique personas from ALL loaded data ideally, but loading just current view is faster.
+    # To be safe and fast, let's load all potential personas from the DB logs or just current view.
+    # Let's use the current view approach for simplicity + cache, or just load all executed logs.
+    # Loading from storage is fast.
+    all_completed = storage.get_all_completed_executions()
+    all_personas = sorted(list(set(e['persona'] for e in all_completed if e.get('persona'))))
+    
+    with col_f1:
+        selected_personas = st.multiselect("Filter by Persona", all_personas, default=[])
+    
+    with col_f2:
+        grouping_mode = st.radio("Group By", ["Date", "Batch (Reference)", "None"], index=0, horizontal=True)
+
+# 3. Tab Layout
+tab1, tab2, tab3 = st.tabs(["⏳ Wait for Approvals", "✅ Approved Images", "🗑️ Disapproved"])
+
+# Filter Logic Helper
+def apply_filters(items, personas):
+    if not personas:
+        return items
+    return [item for item in items if item['persona'] in personas]
+
+# 1. Wait Tab
+with tab1:
+    st.subheader("Wait for Approvals")
+    wait_items = load_gallery_data(OUTPUT_DIR)
+    filtered_wait = apply_filters(wait_items, selected_personas)
+    view_gallery_fragment(filtered_wait, 'wait', OUTPUT_DIR, grouping_mode)
+
+# 2. Approved Tab
+with tab2:
+    st.subheader("Approved Images")
+    approved_items = load_gallery_data(APPROVED_DIR)
+    filtered_approved = apply_filters(approved_items, selected_personas)
+    view_gallery_fragment(filtered_approved, 'approved', APPROVED_DIR, grouping_mode)
+
+# 3. Disapproved Tab
+with tab3:
+    st.subheader("Disapproved Images")
+    disapproved_items = load_gallery_data(DISAPPROVED_DIR)
+    filtered_disapproved = apply_filters(disapproved_items, selected_personas)
+    view_gallery_fragment(filtered_disapproved, 'disapproved', DISAPPROVED_DIR, grouping_mode)
+
+# --- Common Footer ---
+st.divider()
+with st.expander("📝 Daily Notes", expanded=False):
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    all_notes = load_notes()
+    current_note = all_notes.get(today_str, "")
+    new_note = st.text_area(f"Notes for {today_str}", value=current_note, height=100)
+    if st.button("Save Note"):
+        save_note(today_str, new_note)
+        st.success("Saved.")

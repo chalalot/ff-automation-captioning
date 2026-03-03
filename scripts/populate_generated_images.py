@@ -84,7 +84,8 @@ async def main():
                         base_name = execution_id
 
                     # Save Result Image to OUTPUT_DIR
-                    result_filename = f"result_{base_name}.png"
+                    # Append execution_id to ensure uniqueness for multiple variations of the same ref
+                    result_filename = f"result_{base_name}_{execution_id}.png"
                     local_result_path = output_dir / result_filename
                     
                     local_result_path.write_bytes(image_bytes)

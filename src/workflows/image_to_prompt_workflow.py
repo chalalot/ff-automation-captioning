@@ -303,12 +303,9 @@ class ImageToPromptWorkflow:
                  base_instruction = turbo_template.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
             
             for i in range(variation_count):
-                variation_suffix = ""
-                if variation_count > 1:
-                    variation_suffix = f"\n\n**VARIATION INSTRUCTION**: This is variation #{i+1} of {variation_count}. Please ensure this prompt is unique while staying true to the core visual analysis. Slight variations in phrasing or emphasis are encouraged."
-                
+                # No explicit variation instruction; rely on LLM temperature for natural variance.
                 task = Task(
-                    description=base_instruction + variation_suffix,
+                    description=base_instruction,
                     expected_output=f"A detailed paragraph describing the image (Variation {i+1})",
                     agent=turbo_engineer,
                     context=[analyze_task]
@@ -341,12 +338,9 @@ class ImageToPromptWorkflow:
                 """
             
             for i in range(variation_count):
-                variation_suffix = ""
-                if variation_count > 1:
-                    variation_suffix = f"\n\n**VARIATION INSTRUCTION**: This is variation #{i+1}. Ensure unique phrasing where possible."
-
+                # No explicit variation instruction; rely on LLM temperature for natural variance.
                 task = Task(
-                    description=base_instruction + variation_suffix,
+                    description=base_instruction,
                     expected_output=f"A single text string of comma-separated keywords (Variation {i+1}).",
                     agent=engineer,
                     context=[analyze_task]

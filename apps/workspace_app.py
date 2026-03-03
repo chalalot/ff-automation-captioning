@@ -42,7 +42,71 @@ st.title("🚀 Workspace: Input & Generation")
 # Initialize Config Manager
 config_manager = WorkflowConfigManager()
 
+# --- Presets Configuration ---
+PRESETS_DIR = os.path.join(os.path.dirname(__file__), '..', 'prompts', 'presets')
+os.makedirs(PRESETS_DIR, exist_ok=True)
+
+def get_available_presets():
+    if not os.path.exists(PRESETS_DIR):
+        return []
+    files = [f for f in os.listdir(PRESETS_DIR) if f.endswith('.json')]
+    return [os.path.splitext(f)[0] for f in files]
+
+def save_preset(name, config_data):
+    try:
+        path = os.path.join(PRESETS_DIR, f"{name}.json")
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(config_data, f, indent=4)
+        return True
+    except Exception as e:
+        logging.error(f"Failed to save preset: {e}")
+        return False
+
+def load_preset(name):
+    try:
+        path = os.path.join(PRESETS_DIR, f"{name}.json")
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        logging.error(f"Failed to load preset: {e}")
+    return None
+
+st.sidebar.header("💾 Configuration Presets")
+preset_col1, preset_col2 = st.sidebar.columns([2, 1])
+
+# Initialize session state for preset triggers if not exists
+if "preset_loaded" not in st.session_state:
+    st.session_state.preset_loaded = False
+if "loaded_config" not in st.session_state:
+    st.session_state.loaded_config = {}
+
+available_presets = get_available_presets()
+selected_preset = st.sidebar.selectbox("Load Preset", ["Select..."] + available_presets, index=0)
+
+if selected_preset != "Select..." and st.sidebar.button("Load Selected Preset"):
+    config_data = load_preset(selected_preset)
+    if config_data:
+        st.session_state.loaded_config = config_data
+        st.session_state.preset_loaded = True
+        st.success(f"Loaded '{selected_preset}'")
+        time.sleep(0.5)
+        st.rerun()
+
+with st.sidebar.expander("Save Current Preset"):
+    new_preset_name = st.text_input("Preset Name")
+    if st.button("Save Preset"):
+        if new_preset_name:
+            # We need to gather current values. 
+            # Note: We can't access widgets defined below yet, but we can access session state or define a saving mechanism later.
+            # Ideally, we trigger a save flag and handle saving at the end of sidebar or use st.session_state directly if keys match.
+            st.session_state.trigger_save_preset = new_preset_name
+            st.rerun()
+        else:
+            st.warning("Enter a name.")
+
 # Sidebar Configuration
+st.sidebar.markdown("---")
 st.sidebar.header("Configuration")
 
 # Load personas from config
@@ -50,25 +114,56 @@ available_personas = config_manager.get_personas()
 if not available_personas:
     available_personas = ["Jennie"] # Fallback
 
-kol_persona = st.sidebar.selectbox("KOL Persona", available_personas)
-workflow_choice = st.sidebar.selectbox("Workflow Type", ["Turbo", "WAN2.2"])
-vision_model_choice = st.sidebar.selectbox(
-    "Vision Model", 
-    [
-        "ChatGPT (gpt-4o)", 
-        "Grok (grok-4-1-fast-non-reasoning)",
-        "Gemini 3 Flash (gemini-3-flash-preview)"
-    ]
-)
+# -- Determine Defaults from Loaded Preset --
+def get_default(key, fallback):
+    if st.session_state.get("preset_loaded", False):
+        return st.session_state.loaded_config.get(key, fallback)
+    return fallback
+
+# 1. Persona
+default_persona = get_default("kol_persona", available_personas[0] if available_personas else "Jennie")
+if default_persona not in available_personas:
+    default_persona = available_personas[0]
+kol_persona_idx = available_personas.index(default_persona)
+kol_persona = st.sidebar.selectbox("KOL Persona", available_personas, index=kol_persona_idx, key="input_kol_persona")
+
+# 2. Workflow
+wf_options = ["Turbo", "WAN2.2"]
+default_wf = get_default("workflow_choice", "Turbo")
+if default_wf not in wf_options: default_wf = "Turbo"
+workflow_choice = st.sidebar.selectbox("Workflow Type", wf_options, index=wf_options.index(default_wf), key="input_workflow_choice")
+
+# 3. Vision Model
+vm_options = [
+    "ChatGPT (gpt-4o)", 
+    "Grok (grok-4-1-fast-non-reasoning)",
+    "Gemini 3 Flash (gemini-3-flash-preview)"
+]
+default_vm_raw = get_default("vision_model_choice", vm_options[0])
+# robust matching
+default_vm_idx = 0
+for i, opt in enumerate(vm_options):
+    if default_vm_raw == opt:
+        default_vm_idx = i
+        break
+
+vision_model_choice = st.sidebar.selectbox("Vision Model", vm_options, index=default_vm_idx, key="input_vision_model")
+
 vision_model = "gpt-4o"
 if "Grok" in vision_model_choice:
     vision_model = "grok-4-1-fast-non-reasoning"
 elif "gemini-3-flash" in vision_model_choice:
     vision_model = "gemini-3-flash-preview"
 
-limit_choice = st.sidebar.number_input("Batch Limit", min_value=1, max_value=1000, value=10)
-variation_count = st.sidebar.number_input("Variations per Image", min_value=1, max_value=5, value=1, help="Number of different prompts to generate from each image analysis.")
-strength_model = st.sidebar.slider("Model Strength", min_value=0.0, max_value=2.0, value=0.8, step=0.1)
+# 4. Limits & Strength
+default_limit = get_default("limit_choice", 10)
+limit_choice = st.sidebar.number_input("Batch Limit", min_value=1, max_value=1000, value=default_limit, key="input_limit")
+
+default_var = get_default("variation_count", 1)
+variation_count = st.sidebar.number_input("Variations per Image", min_value=1, max_value=5, value=default_var, help="Number of different prompts to generate from each image analysis.", key="input_variation")
+
+default_strength = get_default("strength_model", 0.8)
+strength_model = st.sidebar.slider("Model Strength", min_value=0.0, max_value=2.0, value=float(default_strength), step=0.1, key="input_strength")
 
 # LoRA Configuration
 st.sidebar.subheader("LoRA Configuration")
@@ -77,40 +172,86 @@ lora_low_override = None
 lora_high_override = None
 
 if workflow_choice == "Turbo":
-    # Get default
-    default_lora = PERSONA_LORA_MAPPING_TURBO.get(kol_persona, "")
+    # Get default from mapping OR preset
+    mapped_default = PERSONA_LORA_MAPPING_TURBO.get(kol_persona, "")
+    # If preset loaded, check if it has this specific lora value saved
+    preset_lora = get_default("lora_name_override", mapped_default) if st.session_state.get("preset_loaded") else mapped_default
+    
     # Display input
     lora_name_override = st.sidebar.text_input(
         "LoRA Name", 
-        value=default_lora, 
+        value=preset_lora, 
         key=f"lora_turbo_{kol_persona}"
     )
 elif workflow_choice == "WAN2.2":
     # Get defaults
     wan_config = PERSONA_LORA_MAPPING_WAN.get(kol_persona, {"low": "", "high": ""})
-    default_low = wan_config.get("low", "")
-    default_high = wan_config.get("high", "")
+    mapped_low = wan_config.get("low", "")
+    mapped_high = wan_config.get("high", "")
+    
+    preset_low = get_default("lora_low_override", mapped_low) if st.session_state.get("preset_loaded") else mapped_low
+    preset_high = get_default("lora_high_override", mapped_high) if st.session_state.get("preset_loaded") else mapped_high
     
     lora_low_override = st.sidebar.text_input(
         "Low LoRA Name", 
-        value=default_low, 
+        value=preset_low, 
         key=f"lora_wan_low_{kol_persona}"
     )
     lora_high_override = st.sidebar.text_input(
         "High LoRA Name", 
-        value=default_high, 
+        value=preset_high, 
         key=f"lora_wan_high_{kol_persona}"
     )
 
 # Dimensions Configuration
-width = st.sidebar.text_input("Width", value="1024")
-height = st.sidebar.text_input("Height", value="1600")
+default_w = get_default("width", "1024")
+default_h = get_default("height", "1600")
+width = st.sidebar.text_input("Width", value=default_w, key="input_width")
+height = st.sidebar.text_input("Height", value=default_h, key="input_height")
 
 # Seed Configuration
-seed_strategy = st.sidebar.selectbox("Seed Strategy", ["random", "fixed"], index=0)
+seed_opts = ["random", "fixed"]
+default_seed_strat = get_default("seed_strategy", "random")
+if default_seed_strat not in seed_opts: default_seed_strat = "random"
+
+seed_strategy = st.sidebar.selectbox("Seed Strategy", seed_opts, index=seed_opts.index(default_seed_strat), key="input_seed_strategy")
+
 base_seed = 0
 if seed_strategy == "fixed":
-    base_seed = st.sidebar.number_input("Base Seed", min_value=0, value=0, step=1)
+    default_base_seed = get_default("base_seed", 0)
+    base_seed = st.sidebar.number_input("Base Seed", min_value=0, value=default_base_seed, step=1, key="input_base_seed")
+
+# --- Handle Save Trigger (At end of config section) ---
+if st.session_state.get("trigger_save_preset"):
+    save_name = st.session_state.trigger_save_preset
+    
+    # Gather Data
+    current_config = {
+        "kol_persona": kol_persona,
+        "workflow_choice": workflow_choice,
+        "vision_model_choice": vision_model_choice,
+        "limit_choice": limit_choice,
+        "variation_count": variation_count,
+        "strength_model": strength_model,
+        "width": width,
+        "height": height,
+        "seed_strategy": seed_strategy,
+        "base_seed": base_seed,
+        # LoRAs
+        "lora_name_override": lora_name_override,
+        "lora_low_override": lora_low_override,
+        "lora_high_override": lora_high_override
+    }
+    
+    if save_preset(save_name, current_config):
+        st.sidebar.success(f"✅ Saved preset '{save_name}'")
+    else:
+        st.sidebar.error("Failed to save preset.")
+    
+    # Reset trigger
+    st.session_state.trigger_save_preset = None
+    # Reset loaded flag so we don't stick to old loaded values if user changes things
+    st.session_state.preset_loaded = False 
 
 # Constants from Config
 INPUT_DIR = GlobalConfig.INPUT_DIR
