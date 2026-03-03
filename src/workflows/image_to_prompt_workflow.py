@@ -116,7 +116,7 @@ class ImageToPromptWorkflow:
             llm=llm
         )
 
-    async def process(self, image_path: str, persona_name: str = "Jennie", workflow_type: str = "turbo", vision_model: str = "gpt-4o") -> Dict[str, str]:
+    async def process(self, image_path: str, persona_name: str = "Jennie", workflow_type: str = "turbo", vision_model: str = "gpt-4o", variation_count: int = 1) -> Dict[str, Any]:
         """
         Run the workflow for a single image.
         
@@ -125,9 +125,10 @@ class ImageToPromptWorkflow:
             persona_name: Name of the persona (e.g. "Jennie").
             workflow_type: Type of workflow ("turbo" or "wan2.2").
             vision_model: The vision model to use ("gpt-4o" or "grok-2-vision-1212").
+            variation_count: Number of prompt variations to generate (default: 1).
             
         Returns:
-            A dictionary containing the reference image path and the generated prompt.
+            A dictionary containing the reference image path and the generated prompt(s).
         """
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Image not found at {image_path}")
@@ -274,8 +275,8 @@ class ImageToPromptWorkflow:
             agent=analyst
         )
 
-        # Task 2: Generate Prompt
-        generate_prompt_task = None
+        # Task 2: Generate Prompt(s)
+        generate_prompt_tasks = []
         
         if workflow_type.lower() == "turbo":
             # Determine hair color for Turbo
@@ -295,35 +296,34 @@ class ImageToPromptWorkflow:
             except Exception as e:
                 raise FileNotFoundError(f"Could not load Turbo template from {template_path}: {e}")
 
-            # Safe formatting to ignore keys not present in the template if necessary, 
-            # but usually we expect the template to have these placeholders.
-            # Using standard format.
+            # Safe formatting
             try:
-                prompt_instruction = turbo_template.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
-            except KeyError as e:
-                 # In case the template doesn't have the keys (e.g. user edited them out), try formatting gracefully or just pass as is?
-                 # Better to assume they are there or just replace if they exist.
-                 # Let's try simple string replacement if format fails, or just fail loud to let user know template is broken.
-                 # For now, let's assume valid template.
-                 prompt_instruction = turbo_template.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
+                base_instruction = turbo_template.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
+            except KeyError:
+                 base_instruction = turbo_template.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
             
-            generate_prompt_task = Task(
-                description=prompt_instruction,
-                expected_output="A detailed paragraph describing the image as detailed as possible",
-                agent=turbo_engineer,
-                context=[analyze_task]
-            )
+            for i in range(variation_count):
+                variation_suffix = ""
+                if variation_count > 1:
+                    variation_suffix = f"\n\n**VARIATION INSTRUCTION**: This is variation #{i+1} of {variation_count}. Please ensure this prompt is unique while staying true to the core visual analysis. Slight variations in phrasing or emphasis are encouraged."
+                
+                task = Task(
+                    description=base_instruction + variation_suffix,
+                    expected_output=f"A detailed paragraph describing the image (Variation {i+1})",
+                    agent=turbo_engineer,
+                    context=[analyze_task]
+                )
+                generate_prompt_tasks.append(task)
+
         else:
-            # WAN2.2 (Legacy/Default) Logic - using hardcoded strings mostly, but updated with config data
-            
+            # WAN2.2 (Legacy/Default) Logic
             hairstyle_instruction = f"""
                - PRIORITY: Use the hairstyle exactly as described in the reference image analysis if it is clear and distinct.
                - FALLBACK: If the reference hair is unclear, choose ONE from this list:
                {available_hairstyles}
             """
 
-            generate_prompt_task = Task(
-                description=f"""
+            base_instruction = f"""
                 Create a final Image Generation Prompt based on the analysis.
                  
                 **MANDATORY RULES:**
@@ -338,33 +338,51 @@ class ImageToPromptWorkflow:
                 
                 **OUTPUT FORMAT**:
                 Comma-separated keywords only.
-                """,
-                expected_output="A single text string of comma-separated keywords, approximately 700-800 characters in length.",
-                agent=engineer,
-                context=[analyze_task]
-            )
+                """
+            
+            for i in range(variation_count):
+                variation_suffix = ""
+                if variation_count > 1:
+                    variation_suffix = f"\n\n**VARIATION INSTRUCTION**: This is variation #{i+1}. Ensure unique phrasing where possible."
+
+                task = Task(
+                    description=base_instruction + variation_suffix,
+                    expected_output=f"A single text string of comma-separated keywords (Variation {i+1}).",
+                    agent=engineer,
+                    context=[analyze_task]
+                )
+                generate_prompt_tasks.append(task)
 
         # Run Crew
+        all_tasks = [analyze_task] + generate_prompt_tasks
+        
         crew = Crew(
             agents=[analyst, turbo_engineer if workflow_type.lower() == "turbo" else engineer],
-            tasks=[analyze_task, generate_prompt_task],
+            tasks=all_tasks,
             process=Process.sequential,
             memory=False,
             verbose=self.verbose
         )
 
-        # No extra try/except here - allow exceptions (like Vision failure) to propagate to the caller (process_and_queue.py)
-        result = crew.kickoff()
-        final_prompt = str(result)
+        crew.kickoff()
         
         # Capture the descriptive output
         descriptive_prompt = str(analyze_task.output)
+        
+        # Collect generated prompts
+        generated_prompts = []
+        for task in generate_prompt_tasks:
+            generated_prompts.append(str(task.output))
 
-        logger.info(f"\n✅ Generated Prompt:\n{final_prompt}\n")
+        logger.info(f"\n✅ Generated {len(generated_prompts)} Prompts.")
+
+        # For backward compatibility, return the first prompt as 'generated_prompt'
+        first_prompt = generated_prompts[0] if generated_prompts else ""
 
         return {
             "reference_image": image_path,
-            "generated_prompt": final_prompt,
+            "generated_prompt": first_prompt, # Backward compatibility
+            "generated_prompts": generated_prompts, # New field
             "descriptive_prompt": descriptive_prompt
         }
 

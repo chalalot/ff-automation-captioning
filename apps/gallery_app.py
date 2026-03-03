@@ -349,7 +349,13 @@ def view_gallery_fragment(filtered_items, group_by_date):
             cols = st.columns(cols_per_row)
             for idx, item in enumerate(row_items):
                 with cols[idx]:
-                    st.image(item['path'], caption=item['filename'], width='stretch')
+                    try:
+                        st.image(item['path'], caption=item['filename'], width='stretch')
+                    except Exception as e:
+                        st.error(f"Error loading image: {item['filename']}")
+                        st.caption(f"Path: {item['path']}")
+                        continue
+                        
                     base_name = os.path.splitext(item['filename'])[0]
                     
                     # Controls
@@ -454,7 +460,7 @@ if os.path.exists(OUTPUT_DIR):
             if stats_by_date:
                 df_stats = pd.DataFrame(list(stats_by_date.items()), columns=['Date', 'Count'])
                 df_stats = df_stats.sort_values('Date', ascending=False)
-                st.dataframe(df_stats, hide_index=True, use_container_width=True, height=200)
+                st.dataframe(df_stats, hide_index=True, width=1000, height=200)
             else:
                 st.info("No generation history.")
 

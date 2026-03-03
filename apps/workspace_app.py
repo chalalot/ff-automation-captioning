@@ -67,6 +67,7 @@ elif "gemini-3-flash" in vision_model_choice:
     vision_model = "gemini-3-flash-preview"
 
 limit_choice = st.sidebar.number_input("Batch Limit", min_value=1, max_value=1000, value=10)
+variation_count = st.sidebar.number_input("Variations per Image", min_value=1, max_value=5, value=1, help="Number of different prompts to generate from each image analysis.")
 strength_model = st.sidebar.slider("Model Strength", min_value=0.0, max_value=2.0, value=0.8, step=0.1)
 
 # LoRA Configuration
@@ -625,7 +626,8 @@ with col1:
                         vision_model=vision_model,
                         lora_name=lora_name_override,
                         lora_low=lora_low_override,
-                        lora_high=lora_high_override
+                        lora_high=lora_high_override,
+                        variation_count=variation_count
                     ))
                     process_status_placeholder.success("Batch processing complete!")
                     st.success("Batch processing complete! Check logs above for details.")

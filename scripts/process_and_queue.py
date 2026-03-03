@@ -20,13 +20,13 @@ from utils.constants import DEFAULT_NEGATIVE_PROMPT
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("ProcessAndQueue")
 
-async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callback=None, strength_model=None, seed_strategy="random", base_seed=0, width="1024", height="1600", vision_model="gpt-4o", lora_name=None, lora_low=None, lora_high=None):
+async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callback=None, strength_model=None, seed_strategy="random", base_seed=0, width="1024", height="1600", vision_model="gpt-4o", lora_name=None, lora_low=None, lora_high=None, variation_count=1):
     """
     Main processing loop:
     1. Scans INPUT_DIR for images.
     2. Moves them to PROCESSED_DIR and renames them.
-    3. Generates prompts using CrewAI.
-    4. Queues generation in ComfyUI.
+    3. Generates prompts using CrewAI (supports multiple variations).
+    4. Queues generation in ComfyUI for each variation.
     5. Logs to DB.
     """
     
@@ -94,49 +94,66 @@ async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callb
                 except Exception as cb_err:
                     logger.warning(f"Progress callback failed: {cb_err}")
 
-            # 2. Generate Prompt
-            logger.info(f"Generating prompt for {new_filename}...")
+            # 2. Generate Prompt(s)
+            logger.info(f"Generating {variation_count} prompt(s) for {new_filename}...")
             result = await workflow.process(
                 image_path=str(dest_image_path),
                 persona_name=persona,
                 workflow_type=workflow_type,
-                vision_model=vision_model
-            )
-            prompt_content = result['generated_prompt']
-            
-            # 3. Queue to ComfyUI
-            logger.info(f"Queueing execution for {new_filename}...")
-            execution_id = await client.generate_image(
-                positive_prompt=prompt_content,
-                negative_prompt=DEFAULT_NEGATIVE_PROMPT,
-                kol_persona=persona,
-                workflow_type=workflow_type,
-                strength_model=strength_model,
-                seed_strategy=seed_strategy,
-                base_seed=base_seed,
-                width=width,
-                height=height,
-                lora_name=lora_name,
-                lora_low=lora_low,
-                lora_high=lora_high
+                vision_model=vision_model,
+                variation_count=variation_count
             )
             
-            if execution_id:
-                logger.info(f"✅ Queued - Execution ID: {execution_id}")
+            # Retrieve list of prompts (fallback to single 'generated_prompt' if list missing)
+            prompts = result.get('generated_prompts', [result.get('generated_prompt')])
+            
+            # 3. Queue each prompt to ComfyUI
+            successful_queues_for_image = 0
+            
+            for i, prompt_content in enumerate(prompts):
+                logger.info(f"Queueing execution for {new_filename} (Variation {i+1}/{len(prompts)})...")
                 
-                # 4. Log to DB
-                # Note: We use the path in PROCESSED_DIR as the reference
-                storage.log_execution(
-                    execution_id=execution_id,
-                    prompt=prompt_content,
-                    image_ref_path=str(dest_image_path),
-                    persona=persona
+                # Adjust seed for variations if using fixed seed to avoid identical outputs for different prompts if desirable?
+                # Actually, different prompts usually result in different images even with same seed.
+                # But to be safe, if the user chose FIXED seed, maybe we want same seed for strict comparison, 
+                # or increment seed for variety.
+                # Usually variations imply we want different results, but the prompt difference drives it.
+                # Let's keep the user's seed strategy logic as is.
+                
+                execution_id = await client.generate_image(
+                    positive_prompt=prompt_content,
+                    negative_prompt=DEFAULT_NEGATIVE_PROMPT,
+                    kol_persona=persona,
+                    workflow_type=workflow_type,
+                    strength_model=strength_model,
+                    seed_strategy=seed_strategy,
+                    base_seed=base_seed,
+                    width=width,
+                    height=height,
+                    lora_name=lora_name,
+                    lora_low=lora_low,
+                    lora_high=lora_high
                 )
+                
+                if execution_id:
+                    logger.info(f"✅ Queued Variation {i+1} - Execution ID: {execution_id}")
+                    
+                    # 4. Log to DB
+                    storage.log_execution(
+                        execution_id=execution_id,
+                        prompt=prompt_content,
+                        image_ref_path=str(dest_image_path),
+                        persona=persona
+                    )
+                    successful_queues_for_image += 1
+                else:
+                    logger.error(f"Failed to get execution ID for variation {i+1}.")
+
+            if successful_queues_for_image > 0:
                 successful_count += 1
-            else:
-                logger.error("Failed to get execution ID from ComfyUI.")
-                # We could potentially move the image back to an 'error' folder or 'input' if we want to retry.
-                # But for now, it's safer to leave it in 'processed' to avoid loops.
+            
+            # Log summary for this image
+            logger.info(f"Finished processing {new_filename}. Queued {successful_queues_for_image}/{len(prompts)} variations.")
             
         except Exception as e:
             logger.error(f"❌ Error processing {src_image_path.name}: {e}")
@@ -162,6 +179,7 @@ if __name__ == "__main__":
     parser.add_argument("--lora_name", default=None, help="LoRA name override for Turbo")
     parser.add_argument("--lora_low", default=None, help="Low LoRA override for WAN")
     parser.add_argument("--lora_high", default=None, help="High LoRA override for WAN")
+    parser.add_argument("--variation_count", type=int, default=1, help="Number of prompt variations per image")
     args = parser.parse_args()
     
-    asyncio.run(main(persona=args.persona, workflow_type=args.workflow, limit=args.limit, strength_model=args.strength_model, seed_strategy=args.seed_strategy, base_seed=args.base_seed, width=args.width, height=args.height, vision_model=args.vision_model, lora_name=args.lora_name, lora_low=args.lora_low, lora_high=args.lora_high))
+    asyncio.run(main(persona=args.persona, workflow_type=args.workflow, limit=args.limit, strength_model=args.strength_model, seed_strategy=args.seed_strategy, base_seed=args.base_seed, width=args.width, height=args.height, vision_model=args.vision_model, lora_name=args.lora_name, lora_low=args.lora_low, lora_high=args.lora_high, variation_count=args.variation_count))
