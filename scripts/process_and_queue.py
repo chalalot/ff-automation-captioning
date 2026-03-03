@@ -175,7 +175,7 @@ if __name__ == "__main__":
     parser.add_argument("--base_seed", type=int, default=0, help="Base seed for fixed strategy")
     parser.add_argument("--width", default="1024", help="Image width")
     parser.add_argument("--height", default="1600", help="Image height")
-    parser.add_argument("--vision_model", default="gpt-4o", help="Vision model (gpt-4o/grok-2-vision-1212)")
+    parser.add_argument("--vision_model", default="gpt-4o", help="Vision model (gpt-4o/grok-4-1-fast-non-reasoning)")
     parser.add_argument("--lora_name", default=None, help="LoRA name override for Turbo")
     parser.add_argument("--lora_low", default=None, help="Low LoRA override for WAN")
     parser.add_argument("--lora_high", default=None, help="High LoRA override for WAN")

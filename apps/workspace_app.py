@@ -56,13 +56,13 @@ vision_model_choice = st.sidebar.selectbox(
     "Vision Model", 
     [
         "ChatGPT (gpt-4o)", 
-        "Grok (grok-2-vision-1212)", 
+        "Grok (grok-4-1-fast-non-reasoning)",
         "Gemini 3 Flash (gemini-3-flash-preview)"
     ]
 )
 vision_model = "gpt-4o"
 if "Grok" in vision_model_choice:
-    vision_model = "grok-2-vision-1212"
+    vision_model = "grok-4-1-fast-non-reasoning"
 elif "gemini-3-flash" in vision_model_choice:
     vision_model = "gemini-3-flash-preview"
 

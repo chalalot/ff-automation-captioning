@@ -124,7 +124,7 @@ class ImageToPromptWorkflow:
             image_path: Path to local image file.
             persona_name: Name of the persona (e.g. "Jennie").
             workflow_type: Type of workflow ("turbo" or "wan2.2").
-            vision_model: The vision model to use ("gpt-4o" or "grok-2-vision-1212").
+            vision_model: The vision model to use ("gpt-4o" or "grok-4-1-fast-non-reasoning").
             variation_count: Number of prompt variations to generate (default: 1).
             
         Returns:
