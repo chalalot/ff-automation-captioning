@@ -321,6 +321,40 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
                         get_all_stats.clear()
                         st.rerun()
 
+    # --- Bulk Download for Approved Tab ---
+    if current_tab == 'approved' and items:
+        with st.expander("📥 Download All Approved Images (By Date)", expanded=False):
+            # Group items by date
+            date_groups = {}
+            for item in items:
+                d = item['date']
+                if d not in date_groups: date_groups[d] = []
+                date_groups[d].append(item)
+            
+            # Show download buttons for each date
+            cols = st.columns(3)
+            for i, (date_str, group_items) in enumerate(sorted(date_groups.items(), reverse=True)):
+                with cols[i % 3]:
+                    # Create ZIP in memory
+                    zip_buffer = io.BytesIO()
+                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                        for item in group_items:
+                            f_path = item['path']
+                            if os.path.exists(f_path):
+                                zf.write(f_path, arcname=item['filename'])
+                                # Also include txt if exists
+                                txt_path = os.path.splitext(f_path)[0] + ".txt"
+                                if os.path.exists(txt_path):
+                                    zf.write(txt_path, arcname=os.path.basename(txt_path))
+                    
+                    st.download_button(
+                        label=f"📥 Download {date_str} ({len(group_items)})",
+                        data=zip_buffer.getvalue(),
+                        file_name=f"approved_{date_str}.zip",
+                        mime="application/zip",
+                        key=f"dl_zip_{date_str}"
+                    )
+
     # --- Pagination ---
     items_per_page = 20
     total_items = len(items)
@@ -412,6 +446,19 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
                                 load_gallery_data.clear()
                                 get_all_stats.clear()
                                 st.rerun()
+
+                    # Download Button (All Tabs)
+                    try:
+                        with open(item['path'], "rb") as file:
+                            st.download_button(
+                                label="📥 Download",
+                                data=file,
+                                file_name=fname,
+                                mime="image/png",
+                                key=f"dl_{current_tab}_{fname}"
+                            )
+                    except Exception:
+                        pass
 
                     # Metadata Popover
                     with st.popover("Details"):
