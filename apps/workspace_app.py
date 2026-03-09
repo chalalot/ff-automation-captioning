@@ -781,26 +781,41 @@ with col1:
                 finally:
                     root_logger.removeHandler(handler)
         
-        if st.button("Refresh Status"):
-            st.rerun()
+        # Helper: auto-refresh mechanism if we have active tasks
+        if "celery_tasks" in st.session_state and st.session_state.celery_tasks:
+            st.button("🔄 Refresh Status Manually")
+            # Note: For automatic refresh, you could use st_autorefresh, 
+            # but for native Streamlit we rely on manual clicks or the background check interval.
             
     # Display background tasks status
     if "celery_tasks" in st.session_state and st.session_state.celery_tasks:
-        st.markdown("### Background Task Status")
+        st.markdown("### 🚦 Active Batch Status")
+        st.markdown("[View Full Celery Queue Dashboard (Flower)](http://localhost:5555) *(Make sure Flower is running!)*")
+        
         active_tasks = []
         for task_id in st.session_state.celery_tasks:
             result = celery_app.AsyncResult(task_id)
-            if result.ready():
-                if result.successful():
-                    st.success(f"Task {task_id}: Completed")
+            
+            with st.container():
+                st.markdown(f"**Task ID:** `{task_id[:8]}...`")
+                if result.ready():
+                    if result.successful():
+                        st.success(f"✅ Completed")
+                        # Show some result details if available
+                        if isinstance(result.result, dict):
+                            st.caption(f"Processed: {result.result.get('image_path')} | Queued Variations: {result.result.get('queued_variations')}")
+                    else:
+                        st.error(f"❌ Failed: {result.result}")
                 else:
-                    st.error(f"Task {task_id}: Failed ({result.result})")
-            else:
-                active_tasks.append(task_id)
-                status_info = result.info.get('status', 'Processing...') if isinstance(result.info, dict) else 'Processing...'
-                st.info(f"Task {task_id}: {result.state} - {status_info}")
-        
-        # Keep only active tasks in session state if user wants to clear completed
+                    active_tasks.append(task_id)
+                    info = result.info if isinstance(result.info, dict) else {}
+                    status_text = info.get('status', 'Waiting in queue...')
+                    progress_val = info.get('progress', 0)
+                    
+                    st.info(status_text)
+                    st.progress(progress_val)
+                    
+        st.markdown("---")
         if st.button("Clear Completed Tasks"):
             st.session_state.celery_tasks = active_tasks
             st.rerun()

@@ -16,7 +16,7 @@ def process_image_task(self, dest_image_path, persona, workflow_type, vision_mod
     This runs asynchronously within an event loop since the core components use asyncio.
     """
     try:
-        self.update_state(state='PROCESSING', meta={'status': f"Generating {variation_count} prompt(s) for {dest_image_path}..."})
+        self.update_state(state='STARTING', meta={'status': f"⏳ Initializing task...", 'progress': 10})
         return asyncio.run(async_process_image(
             dest_image_path=dest_image_path,
             persona=persona,
@@ -43,6 +43,7 @@ async def async_process_image(dest_image_path, persona, workflow_type, vision_mo
     storage = ImageLogsStorage()
     
     logger.info(f"Generating {variation_count} prompt(s) for {dest_image_path}...")
+    task.update_state(state='GENERATING_PROMPT', meta={'status': f"🤖 CrewAI analyzing image and writing {variation_count} prompt(s)...", 'progress': 40})
     
     result = await workflow.process(
         image_path=dest_image_path,
@@ -58,7 +59,10 @@ async def async_process_image(dest_image_path, persona, workflow_type, vision_mo
     
     for i, prompt_content in enumerate(prompts):
         logger.info(f"Queueing execution for {dest_image_path} (Variation {i+1}/{len(prompts)})...")
-        task.update_state(state='QUEUEING', meta={'status': f"Queueing variation {i+1}/{len(prompts)}..."})
+        
+        # Calculate dynamic progress (between 60% and 90% based on iteration)
+        prog = int(60 + (30 * (i / len(prompts))))
+        task.update_state(state='QUEUEING_COMFY', meta={'status': f"🎨 Sending variation {i+1}/{len(prompts)} to ComfyUI...", 'progress': prog})
         
         execution_id = await client.generate_image(
             positive_prompt=prompt_content,
@@ -89,6 +93,8 @@ async def async_process_image(dest_image_path, persona, workflow_type, vision_mo
         else:
             logger.error(f"Failed to get execution ID for variation {i+1}.")
             
+    task.update_state(state='SUCCESS', meta={'status': f"✅ Finished processing {dest_image_path}", 'progress': 100})
+    
     return {
         "success": True,
         "image_path": dest_image_path,

@@ -20,3 +20,6 @@ crewai[google-genai]
 psutil
 celery
 redis
+flower
+
+
