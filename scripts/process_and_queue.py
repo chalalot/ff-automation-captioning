@@ -11,10 +11,7 @@ from pathlib import Path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.config import GlobalConfig
-from src.third_parties.comfyui_client import ComfyUIClient
-from src.database.image_logs_storage import ImageLogsStorage
-from src.workflows.image_to_prompt_workflow import ImageToPromptWorkflow
-from utils.constants import DEFAULT_NEGATIVE_PROMPT
+from tasks import process_image_task
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -58,13 +55,7 @@ async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callb
     batch = images[:limit]
     logger.info(f"Found {len(images)} images. Processing batch of {len(batch)} for persona '{persona}'.")
     
-    # Initialize components
-    # verbose=False to reduce clutter in logs, since we log main steps here
-    workflow = ImageToPromptWorkflow(verbose=False)
-    client = ComfyUIClient()
-    storage = ImageLogsStorage()
-    
-    successful_count = 0
+    queued_task_ids = []
     
     for src_image_path in batch:
         try:
@@ -94,75 +85,34 @@ async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callb
                 except Exception as cb_err:
                     logger.warning(f"Progress callback failed: {cb_err}")
 
-            # 2. Generate Prompt(s)
-            logger.info(f"Generating {variation_count} prompt(s) for {new_filename}...")
-            result = await workflow.process(
-                image_path=str(dest_image_path),
-                persona_name=persona,
+            # 2. Queue Celery Task
+            task = process_image_task.delay(
+                dest_image_path=str(dest_image_path),
+                persona=persona,
                 workflow_type=workflow_type,
                 vision_model=vision_model,
-                variation_count=variation_count
+                variation_count=variation_count,
+                strength_model=strength_model,
+                seed_strategy=seed_strategy,
+                base_seed=base_seed,
+                width=width,
+                height=height,
+                lora_name=lora_name,
+                lora_low=lora_low,
+                lora_high=lora_high
             )
             
-            # Retrieve list of prompts (fallback to single 'generated_prompt' if list missing)
-            prompts = result.get('generated_prompts', [result.get('generated_prompt')])
-            
-            # 3. Queue each prompt to ComfyUI
-            successful_queues_for_image = 0
-            
-            for i, prompt_content in enumerate(prompts):
-                logger.info(f"Queueing execution for {new_filename} (Variation {i+1}/{len(prompts)})...")
-                
-                # Adjust seed for variations if using fixed seed to avoid identical outputs for different prompts if desirable?
-                # Actually, different prompts usually result in different images even with same seed.
-                # But to be safe, if the user chose FIXED seed, maybe we want same seed for strict comparison, 
-                # or increment seed for variety.
-                # Usually variations imply we want different results, but the prompt difference drives it.
-                # Let's keep the user's seed strategy logic as is.
-                
-                execution_id = await client.generate_image(
-                    positive_prompt=prompt_content,
-                    negative_prompt=DEFAULT_NEGATIVE_PROMPT,
-                    kol_persona=persona,
-                    workflow_type=workflow_type,
-                    strength_model=strength_model,
-                    seed_strategy=seed_strategy,
-                    base_seed=base_seed,
-                    width=width,
-                    height=height,
-                    lora_name=lora_name,
-                    lora_low=lora_low,
-                    lora_high=lora_high
-                )
-                
-                if execution_id:
-                    logger.info(f"✅ Queued Variation {i+1} - Execution ID: {execution_id}")
-                    
-                    # 4. Log to DB
-                    storage.log_execution(
-                        execution_id=execution_id,
-                        prompt=prompt_content,
-                        image_ref_path=str(dest_image_path),
-                        persona=persona
-                    )
-                    successful_queues_for_image += 1
-                else:
-                    logger.error(f"Failed to get execution ID for variation {i+1}.")
-
-            if successful_queues_for_image > 0:
-                successful_count += 1
-            
-            # Log summary for this image
-            logger.info(f"Finished processing {new_filename}. Queued {successful_queues_for_image}/{len(prompts)} variations.")
+            logger.info(f"Queued Celery Task ID: {task.id} for {new_filename}")
+            queued_task_ids.append(task.id)
             
         except Exception as e:
             logger.error(f"❌ Error processing {src_image_path.name}: {e}")
-            # Similar to above, leave in processed (or potentially an error folder).
-            # If the move failed (e.g. permission error), the file might still be in input, which is fine (retry later).
+            
+    logger.info("=" * 40)
+    logger.info(f"Batch Queued. Dispatched {len(queued_task_ids)} tasks to Celery.")
+    logger.info("=" * 40)
     
-    logger.info("=" * 40)
-    logger.info(f"Batch Complete. Processed & Queued: {successful_count}/{len(batch)}")
-    logger.info("=" * 40)
+    return queued_task_ids
 
 if __name__ == "__main__":
     import argparse

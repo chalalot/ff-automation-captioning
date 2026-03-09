@@ -20,6 +20,7 @@ from src.database.image_logs_storage import ImageLogsStorage
 from src.workflows.image_to_prompt_workflow import ImageToPromptWorkflow
 from src.workflows.config_manager import WorkflowConfigManager
 from src.utils.streamlit_utils import StreamlitLogger
+from celery_app import celery_app
 
 # Import Scripts for Buttons
 try:
@@ -750,11 +751,11 @@ with col1:
                         input_count_placeholder.metric("Images Remaining in Sorted Folder", count)
                         
                         if filename:
-                            process_status_placeholder.info(f"🔄 **Processing:** `{filename}` ...")
+                            process_status_placeholder.info(f"🔄 **Queueing:** `{filename}` ...")
                         else:
-                            process_status_placeholder.info("🔄 Processing next image...")
+                            process_status_placeholder.info("🔄 Queueing next image...")
 
-                    asyncio.run(run_process_script(
+                    queued_task_ids = asyncio.run(run_process_script(
                         persona=kol_persona, 
                         workflow_type=workflow_choice.lower(),
                         limit=limit_choice,
@@ -770,16 +771,38 @@ with col1:
                         lora_high=lora_high_override,
                         variation_count=variation_count
                     ))
-                    process_status_placeholder.success("Batch processing complete!")
-                    st.success("Batch processing complete! Check logs above for details.")
-                    # Don't rerun immediately so user can see logs
-                    # st.rerun() 
+                    process_status_placeholder.success("Batch successfully submitted to background workers!")
+                    st.success(f"Dispatched {len(queued_task_ids)} background tasks. You can safely close this page.")
+                    if "celery_tasks" not in st.session_state:
+                        st.session_state.celery_tasks = []
+                    st.session_state.celery_tasks.extend(queued_task_ids)
                 except Exception as e:
                     st.error(f"Error during processing: {e}")
                 finally:
                     root_logger.removeHandler(handler)
         
         if st.button("Refresh Status"):
+            st.rerun()
+            
+    # Display background tasks status
+    if "celery_tasks" in st.session_state and st.session_state.celery_tasks:
+        st.markdown("### Background Task Status")
+        active_tasks = []
+        for task_id in st.session_state.celery_tasks:
+            result = celery_app.AsyncResult(task_id)
+            if result.ready():
+                if result.successful():
+                    st.success(f"Task {task_id}: Completed")
+                else:
+                    st.error(f"Task {task_id}: Failed ({result.result})")
+            else:
+                active_tasks.append(task_id)
+                status_info = result.info.get('status', 'Processing...') if isinstance(result.info, dict) else 'Processing...'
+                st.info(f"Task {task_id}: {result.state} - {status_info}")
+        
+        # Keep only active tasks in session state if user wants to clear completed
+        if st.button("Clear Completed Tasks"):
+            st.session_state.celery_tasks = active_tasks
             st.rerun()
 
 with col2:
