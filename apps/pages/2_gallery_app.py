@@ -13,7 +13,7 @@ from datetime import datetime
 from PIL import Image
 
 # Path setup
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from src.config import GlobalConfig
 from src.database.image_logs_storage import ImageLogsStorage

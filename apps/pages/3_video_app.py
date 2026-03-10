@@ -11,7 +11,7 @@ import shutil
 import json
 
 # Path setup
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from src.config import GlobalConfig
 from src.workflows.video_storyboard_workflow import VideoStoryboardWorkflow

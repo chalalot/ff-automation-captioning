@@ -13,7 +13,7 @@ import time
 from datetime import datetime
 
 # Add project root to path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from src.config import GlobalConfig
 from src.database.image_logs_storage import ImageLogsStorage
@@ -28,7 +28,7 @@ try:
     from scripts.populate_generated_images import main as run_populate_script
 except ImportError:
     # Fallback if running from a different context where scripts module isn't resolvable directly
-    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'scripts'))
     from scripts.process_and_queue import main as run_process_script
     from scripts.populate_generated_images import main as run_populate_script
 
@@ -41,7 +41,7 @@ st.title("🚀 Workspace: Input & Generation")
 config_manager = WorkflowConfigManager()
 
 # --- Presets Configuration ---
-PRESETS_DIR = os.path.join(os.path.dirname(__file__), '..', 'prompts', 'presets')
+PRESETS_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'prompts', 'presets')
 os.makedirs(PRESETS_DIR, exist_ok=True)
 
 def get_available_presets():
@@ -360,7 +360,7 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
     col_edit, col_test = st.columns([1.5, 1])
     
     # Paths - Dynamic based on selected type
-    base_workflow_dir = os.path.join(os.path.dirname(__file__), '..', 'prompts', 'templates', selected_type_for_editor)
+    base_workflow_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'prompts', 'templates', selected_type_for_editor)
     
     # Ensure directory exists (create if new type added manually but folder missing)
     if not os.path.exists(base_workflow_dir):
@@ -479,7 +479,7 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
             with st.spinner("Analyzing and Generating Prompt..."):
                 try:
                     # Save temp file
-                    temp_dir = os.path.join(os.path.dirname(__file__), '..', 'temp_test')
+                    temp_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'temp_test')
                     os.makedirs(temp_dir, exist_ok=True)
                     temp_path = os.path.join(temp_dir, test_image.name)
                     
