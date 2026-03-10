@@ -281,7 +281,7 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
         with col_actions:
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("✅ Approve Selected", type="primary", use_container_width=True):
+                if st.button("✅ Approve Selected", type="primary", width='stretch'):
                     count = 0
                     for item in items:
                         fname = item['filename']
@@ -306,7 +306,7 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
                         st.warning("No images selected for approval.")
 
             with c2:
-                if st.button("🗑️ Disapprove Remaining", type="secondary", use_container_width=True):
+                if st.button("🗑️ Disapprove Remaining", type="secondary", width='stretch'):
                      # Disapprove everything NOT marked for approval
                     count = 0
                     for item in items:
@@ -388,7 +388,7 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
             for idx, item in enumerate(row_items):
                 with cols[idx]:
                     try:
-                        st.image(item['path'], width=None, use_container_width=True)
+                        st.image(item['path'], width='stretch')
                     except Exception:
                         st.error("Error loading image")
                         continue
@@ -525,7 +525,7 @@ col_title, col_refresh = st.columns([4, 1])
 with col_title:
     st.title("🗂️ Results Gallery")
 with col_refresh:
-    if st.button("🔄 Refresh All", type="primary", use_container_width=True):
+    if st.button("🔄 Refresh All", type="primary", width='stretch'):
         load_gallery_data.clear()
         get_all_stats.clear()
         st.rerun()
@@ -537,7 +537,7 @@ if not df_stats.empty:
     st.dataframe(
         df_stats, 
         hide_index=True, 
-        use_container_width=True,
+        width='stretch',
         column_config={
             "Approval Rate": st.column_config.ProgressColumn(
                 "Approval Rate",

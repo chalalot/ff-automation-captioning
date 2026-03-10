@@ -614,7 +614,7 @@ with st.expander("📂 Manage Sorted Images", expanded=True):
                 col = cols[i % 4]
                 file_path = os.path.join(INPUT_DIR, filename)
                 with col:
-                    st.image(file_path, use_container_width=True)
+                    st.image(file_path, width='stretch')
                     if st.checkbox(f"Select {filename}", key=f"sel_{filename}"):
                         selected_images.append(filename)
             
@@ -723,101 +723,165 @@ with col1:
     st.subheader("Step 1: Process & Queue")
     st.markdown(f"Consumes images from `{INPUT_DIR}`, generates prompts, and queues them.")
     
-    # Status placeholder for active processing feedback
-    process_status_placeholder = st.empty()
-    
     if st.button("Start Processing & Queueing", type="primary"):
-        st.subheader("📝 Live Execution Logs")
-        
-        # Scrollable container for logs
-        with st.container(height=300):
-            log_placeholder = st.empty()
-            st_logger = StreamlitLogger(log_placeholder)
-            
-            # Setup logging redirection
-            handler = StreamlitLogHandler(st_logger)
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            handler.setFormatter(formatter)
-            
-            root_logger = logging.getLogger()
-            root_logger.addHandler(handler)
-            
-            with st.spinner(f"Processing batch of {limit_choice} images..."):
-                try:
-                    # Callback to update the metric live during processing
-                    # Now accepts an optional filename argument from scripts/process_and_queue.py
-                    def on_progress(filename=None):
-                        count = count_files_in_input() # update count
-                        input_count_placeholder.metric("Images Remaining in Sorted Folder", count)
-                        
-                        if filename:
-                            process_status_placeholder.info(f"🔄 **Queueing:** `{filename}` ...")
-                        else:
-                            process_status_placeholder.info("🔄 Queueing next image...")
-
-                    queued_task_ids = asyncio.run(run_process_script(
-                        persona=kol_persona, 
-                        workflow_type=workflow_choice.lower(),
-                        limit=limit_choice,
-                        progress_callback=on_progress,
-                        strength_model=str(strength_model),
-                        seed_strategy=seed_strategy,
-                        base_seed=base_seed,
-                        width=width,
-                        height=height,
-                        vision_model=vision_model,
-                        lora_name=lora_name_override,
-                        lora_low=lora_low_override,
-                        lora_high=lora_high_override,
-                        variation_count=variation_count
-                    ))
-                    process_status_placeholder.success("Batch successfully submitted to background workers!")
-                    st.success(f"Dispatched {len(queued_task_ids)} background tasks. You can safely close this page.")
-                    if "celery_tasks" not in st.session_state:
-                        st.session_state.celery_tasks = []
-                    st.session_state.celery_tasks.extend(queued_task_ids)
-                except Exception as e:
-                    st.error(f"Error during processing: {e}")
-                finally:
-                    root_logger.removeHandler(handler)
-        
-        # Helper: auto-refresh mechanism if we have active tasks
-        if "celery_tasks" in st.session_state and st.session_state.celery_tasks:
-            st.button("🔄 Refresh Status Manually")
-            # Note: For automatic refresh, you could use st_autorefresh, 
-            # but for native Streamlit we rely on manual clicks or the background check interval.
-            
-    # Display background tasks status
-    if "celery_tasks" in st.session_state and st.session_state.celery_tasks:
-        st.markdown("### 🚦 Active Batch Status")
-        st.markdown("[View Full Celery Queue Dashboard (Flower)](http://localhost:5555) *(Make sure Flower is running!)*")
-        
-        active_tasks = []
-        for task_id in st.session_state.celery_tasks:
-            result = celery_app.AsyncResult(task_id)
-            
-            with st.container():
-                st.markdown(f"**Task ID:** `{task_id[:8]}...`")
-                if result.ready():
-                    if result.successful():
-                        st.success(f"✅ Completed")
-                        # Show some result details if available
-                        if isinstance(result.result, dict):
-                            st.caption(f"Processed: {result.result.get('image_path')} | Queued Variations: {result.result.get('queued_variations')}")
-                    else:
-                        st.error(f"❌ Failed: {result.result}")
+        with st.spinner("Preparing tasks..."):
+            try:
+                def on_progress(filename=None):
+                    count = count_files_in_input()
+                    input_count_placeholder.metric("Images Remaining in Sorted Folder", count)
+                
+                queued_task_ids = asyncio.run(run_process_script(
+                    persona=kol_persona, 
+                    workflow_type=workflow_choice.lower(),
+                    limit=limit_choice,
+                    progress_callback=on_progress,
+                    strength_model=str(strength_model),
+                    seed_strategy=seed_strategy,
+                    base_seed=base_seed,
+                    width=width,
+                    height=height,
+                    vision_model=vision_model,
+                    lora_name=lora_name_override,
+                    lora_low=lora_low_override,
+                    lora_high=lora_high_override,
+                    variation_count=variation_count
+                ))
+                
+                if not queued_task_ids:
+                    st.warning("No images found to process. Check your Input Directory.")
                 else:
-                    active_tasks.append(task_id)
-                    info = result.info if isinstance(result.info, dict) else {}
-                    status_text = info.get('status', 'Waiting in queue...')
-                    progress_val = info.get('progress', 0)
+                    # Initialize or append to session state
+                    if "active_batch" not in st.session_state:
+                        st.session_state.active_batch = {
+                            "tasks": [],
+                            "config": {}
+                        }
+                    st.session_state.active_batch["tasks"].extend(queued_task_ids)
                     
-                    st.info(status_text)
-                    st.progress(progress_val)
-                    
+                    # Store current config to show in the UI banner
+                    st.session_state.active_batch["config"] = {
+                        "persona": kol_persona,
+                        "workflow": workflow_choice,
+                        "vision": vision_model_choice,
+                        "limit": limit_choice,
+                        "variations": variation_count,
+                        "queued_count": len(queued_task_ids)
+                    }
+                    st.success(f"Successfully queued {len(queued_task_ids)} images for processing!")
+            except Exception as e:
+                st.error(f"Error during queueing: {e}")
+
+    # Helper: Auto-refresh manually (if active tasks exist)
+    if st.session_state.get("active_batch", {}).get("tasks"):
+        st.button("🔄 Refresh Task Status", width='stretch')
+
+    # UI Banner: Current Batch Details
+    batch_state = st.session_state.get("active_batch", {})
+    all_tasks = batch_state.get("tasks", [])
+    
+    if all_tasks:
+        config = batch_state.get("config", {})
+        
+        st.markdown("### 📋 Current Batch Details")
+        st.info(f"**Persona:** {config.get('persona')} | **Workflow:** {config.get('workflow')} | **Vision:** {config.get('vision')}\n\n"
+                f"**Images Queued:** {config.get('queued_count')} | **Variations per Image:** {config.get('variations')}")
+        
+        st.markdown("[🔍 View Full Celery Dashboard (Flower)](http://localhost:5555)")
         st.markdown("---")
-        if st.button("Clear Completed Tasks"):
-            st.session_state.celery_tasks = active_tasks
+        
+        # Calculate Overarching Progress
+        completed_count = 0
+        active_tasks = []
+        
+        task_results_to_render = []
+        
+        # Gather states
+        for task_id in all_tasks:
+            result = celery_app.AsyncResult(task_id)
+            if result.ready():
+                completed_count += 1
+            else:
+                active_tasks.append(task_id)
+            
+            task_results_to_render.append((task_id, result))
+            
+        # Display General Progress Bar
+        total_tasks = len(all_tasks)
+        general_progress = completed_count / total_tasks if total_tasks > 0 else 1.0
+        
+        st.markdown(f"**Overall Progress:** {completed_count} / {total_tasks} Images Done")
+        st.progress(general_progress)
+        
+        st.markdown("---")
+        st.markdown("### 🚦 Detailed Task Status")
+        
+        # Status Blocks Render
+        for idx, (task_id, result) in enumerate(task_results_to_render):
+            st.markdown(f"**Task {idx + 1}:** `{task_id[:8]}...`")
+            
+            # Extract state details
+            state = result.state
+            info = result.info if isinstance(result.info, dict) else {}
+            
+            # Helper logic to determine what block is lit
+            # We map states to 4 blocks: STARTING (1), GENERATING_PROMPT (2), QUEUEING_COMFY (3), SUCCESS (4)
+            # If state is FAILURE, all blocks red or something similar
+            
+            block1_style = "⚪"
+            block2_style = "⚪"
+            block3_style = "⚪"
+            block4_style = "⚪"
+            
+            error_msg = None
+            
+            if state == "SUCCESS":
+                block1_style = "🟢"
+                block2_style = "🟢"
+                block3_style = "🟢"
+                block4_style = "✅"
+            elif state == "FAILURE":
+                block1_style = "🔴"
+                block2_style = "🔴"
+                block3_style = "🔴"
+                block4_style = "❌"
+                error_msg = str(result.result)
+            elif state == "QUEUEING_COMFY":
+                block1_style = "🟢"
+                block2_style = "🟢"
+                block3_style = "🔵"
+            elif state == "GENERATING_PROMPT":
+                block1_style = "🟢"
+                block2_style = "🔵"
+            elif state == "STARTING" or state == "PROCESSING":
+                block1_style = "🔵"
+            elif state == "PENDING":
+                # Waiting in Redis Queue before worker picks it up
+                block1_style = "🟡"
+            
+            # Render Blocks using columns
+            c1, c2, c3, c4 = st.columns(4)
+            
+            with c1:
+                st.markdown(f"{block1_style} **1. Queued & Init**")
+            with c2:
+                st.markdown(f"{block2_style} **2. AI Prompting**")
+            with c3:
+                st.markdown(f"{block3_style} **3. ComfyUI Render**")
+            with c4:
+                st.markdown(f"{block4_style} **4. Complete**")
+                
+            if error_msg:
+                st.error(f"Error: {error_msg}")
+            elif not result.ready() and state != "PENDING":
+                status_text = info.get('status', 'Processing...')
+                st.caption(f"_{status_text}_")
+            
+            st.divider()
+
+        if st.button("Clear Completed from List"):
+            st.session_state.active_batch["tasks"] = active_tasks
+            if not active_tasks:
+                st.session_state.active_batch = {}
             st.rerun()
 
 with col2:

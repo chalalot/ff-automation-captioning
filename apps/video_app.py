@@ -352,7 +352,7 @@ with tab_create:
                 for i, img in enumerate(batch):
                     with c_grid[i % 4]:
                         p = os.path.join(OUTPUT_DIR, img)
-                        st.image(p, use_container_width=True)
+                        st.image(p, width='stretch')
                         if st.button("Add", key=f"add_{img}"):
                             add_to_queue(p)
 
@@ -916,7 +916,7 @@ with tab_constructor:
                     st.caption(f"**{display_name}**")
                     
                     # Add Action
-                    if st.button("➕ Add", key=f"add_{v_file}", use_container_width=True):
+                    if st.button("➕ Add", key=f"add_{v_file}", width='stretch'):
                          if "track_videos" not in st.session_state: st.session_state.track_videos = []
                          st.session_state.track_videos.append(v_file)
                          st.toast(f"Added {v_file}")
@@ -983,7 +983,7 @@ with tab_constructor:
                  with st.container(border=True):
                     st.caption(f"#{i+1}")
                     if thumb_path and os.path.exists(thumb_path):
-                        st.image(thumb_path, use_container_width=True)
+                        st.image(thumb_path, width='stretch')
                     else:
                         st.caption("No Preview")
                     
@@ -1013,7 +1013,7 @@ with tab_constructor:
         # Merge Actions
         ac1, ac2, ac3 = st.columns([1, 2, 1])
         with ac2:
-            if st.button("🎥 Merge Sequence", type="primary", use_container_width=True):
+            if st.button("🎥 Merge Sequence", type="primary", width='stretch'):
                  prog_bar = st.progress(0)
                  status_text = st.empty()
                  
@@ -1037,7 +1037,7 @@ with tab_constructor:
                     except Exception as e:
                         st.error(f"Merge Failed: {e}")
         with ac3:
-             if st.button("Clear Track", use_container_width=True):
+             if st.button("Clear Track", width='stretch'):
                 st.session_state.track_videos = []
                 st.rerun()
 
