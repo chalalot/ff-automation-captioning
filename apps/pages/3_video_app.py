@@ -30,9 +30,6 @@ from moviepy import VideoFileClip
 # Initialize Storage
 video_storage = VideoLogsStorage()
 
-# Page Config
-st.set_page_config(page_title="Video - CrewAI Image Workflow", layout="wide")
-
 st.title("🎬 Video Storyboard & Generation")
 
 # Constants

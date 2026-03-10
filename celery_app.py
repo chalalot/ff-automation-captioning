@@ -25,5 +25,13 @@ celery_app.conf.update(
     task_track_started=True,
 )
 
+# Configure Celery Beat to run background check
+celery_app.conf.beat_schedule = {
+    'populate-generated-images-every-minute': {
+        'task': 'tasks.run_populate_images',
+        'schedule': 60.0,
+    },
+}
+
 if __name__ == '__main__':
     celery_app.start()

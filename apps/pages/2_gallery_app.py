@@ -20,9 +20,6 @@ from src.database.image_logs_storage import ImageLogsStorage
 from src.third_parties.comfyui_client import ComfyUIClient
 from src.utils.streamlit_utils import get_sorted_images, fetch_remote_metadata
 
-# Page Config
-st.set_page_config(page_title="Gallery - CrewAI Image Workflow", layout="wide")
-
 # Constants
 OUTPUT_DIR = GlobalConfig.OUTPUT_DIR
 APPROVED_DIR = os.path.join(OUTPUT_DIR, "approved")

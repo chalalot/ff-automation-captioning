@@ -8,7 +8,20 @@ from utils.constants import DEFAULT_NEGATIVE_PROMPT
 
 logger = logging.getLogger(__name__)
 
+from scripts.populate_generated_images import main as run_populate_images_async
+
 # Re-use instances if possible, but workflow might be stateful, so we'll instantiate inside the task or setup cleanly
+
+@celery_app.task(name="tasks.run_populate_images")
+def run_populate_images():
+    """
+    Background task to populate generated images via Celery Beat.
+    """
+    try:
+        asyncio.run(run_populate_images_async())
+    except Exception as e:
+        logger.error(f"Error in run_populate_images: {e}")
+
 @celery_app.task(bind=True, name="tasks.process_image_task")
 def process_image_task(self, dest_image_path, persona, workflow_type, vision_model, variation_count, strength_model, seed_strategy, base_seed, width, height, lora_name, lora_low, lora_high):
     """

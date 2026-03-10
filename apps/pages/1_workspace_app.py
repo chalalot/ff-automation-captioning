@@ -34,9 +34,6 @@ except ImportError:
 
 from src.third_parties.comfyui_client import ComfyUIClient, PERSONA_LORA_MAPPING_TURBO, PERSONA_LORA_MAPPING_WAN
 
-# Page Config
-st.set_page_config(page_title="Workspace - CrewAI Image Workflow", layout="wide")
-
 # Title
 st.title("🚀 Workspace: Input & Generation")
 
@@ -267,34 +264,6 @@ os.makedirs(PROCESSED_DIR, exist_ok=True)
 # Initialize Components
 storage = ImageLogsStorage()
 
-# --- Background Process for Auto-Check ---
-@st.cache_resource
-def start_background_checker():
-    """
-    Starts a background thread that checks for completed images every minute.
-    This runs once per session (singleton).
-    """
-    def background_loop():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        logging.info("Starting background auto-check loop...")
-        while True:
-            try:
-                # Run the populate script logic
-                loop.run_until_complete(run_populate_script())
-            except Exception as e:
-                logging.error(f"Error in background auto-check: {e}")
-            
-            # Wait for 1 minute
-            time.sleep(60)
-
-    thread = threading.Thread(target=background_loop, daemon=True)
-    thread.start()
-    return thread
-
-# Start the background checker
-checker_thread = start_background_checker()
 
 class StreamlitLogHandler(logging.Handler):
     def __init__(self, streamlit_logger):
