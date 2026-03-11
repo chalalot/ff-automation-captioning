@@ -70,8 +70,15 @@ async def main():
                     try:
                         image_bytes = await client.download_image_by_path(comfy_image_path)
                     except Exception as e:
-                        logger.error(f"Failed to download image for {execution_id}: {e}")
-                        continue
+                        logger.error(f"Failed to download image by path for {execution_id}: {e}")
+                        try:
+                            logger.info(f"Fallback to downloading by execution_id for {execution_id}")
+                            image_bytes = await client.download_image(execution_id)
+                        except Exception as inner_e:
+                            logger.error(f"Fallback download failed for {execution_id}: {inner_e}")
+                            logger.error(f"❌ Execution {execution_id} failed to download. Marking as failed in DB.")
+                            storage.mark_as_failed(execution_id)
+                            continue
                     
                     # Determine Base Name from Ref Image
                     base_name = "unknown"
