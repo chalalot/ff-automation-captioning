@@ -29,7 +29,7 @@ celery_app.conf.update(
 celery_app.conf.beat_schedule = {
     'populate-generated-images-every-minute': {
         'task': 'tasks.run_populate_images',
-        'schedule': 60.0,
+        'schedule': 30.0,
     },
 }
 
