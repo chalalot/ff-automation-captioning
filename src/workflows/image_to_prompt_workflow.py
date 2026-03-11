@@ -25,6 +25,43 @@ class ImageToPromptWorkflow:
     def __init__(self, verbose: bool = True):
         self.verbose = verbose
         self.config_manager = WorkflowConfigManager()
+        # Cache to reuse agents and LLMs across invocations
+        self._cached_llms = {}
+        self._cached_agents = {}
+
+    def _get_llm(self, vision_model: str) -> Any:
+        if vision_model in self._cached_llms:
+            return self._cached_llms[vision_model]
+            
+        if vision_model.lower().startswith("grok"):
+            from crewai import LLM
+            import litellm
+            
+            litellm.telemetry = False
+            litellm.turn_off_message_logging = True 
+            litellm.suppress_debug_info = True
+            litellm.success_callback = []
+            litellm.failure_callback = []
+            
+            llm = LLM(
+                model="openai/" + vision_model,
+                base_url="https://api.x.ai/v1",
+                api_key=GlobalConfig.GROK_API_KEY
+            )
+            logger.info(f"Initialized cached Grok LLM ({vision_model}) for Agents")
+        elif vision_model.lower().startswith("gemini"):
+            from crewai import LLM
+            llm = LLM(
+                model="gemini/" + vision_model,
+                api_key=GlobalConfig.GEMINI_API_KEY
+            )
+            logger.info(f"Initialized cached Gemini LLM ({vision_model}) for Agents")
+        else:
+            llm = vision_model
+            logger.info(f"Initialized cached default LLM ({vision_model}) for Agents")
+            
+        self._cached_llms[vision_model] = llm
+        return llm
 
     def _create_analyst(self, template_dir: str, llm: Any) -> Agent:
         # Load backstory from file in specific template directory
@@ -204,62 +241,24 @@ class ImageToPromptWorkflow:
 
         # --- CREW SETUP ---
         
-        # Determine Agent LLM
-        if vision_model.lower().startswith("grok"):
-            from crewai import LLM
-            import litellm
-            
-            # DISABLE LiteLLM Telemetry & Callbacks to prevent "atexit" errors on shutdown
-            litellm.telemetry = False
-            litellm.turn_off_message_logging = True # Further disable logging to avoid proxy requirement
-            litellm.suppress_debug_info = True
-            litellm.success_callback = []
-            litellm.failure_callback = []
-            
-            # FORCE Environment Variables for LiteLLM (Temporarily)
-            # This is critical because LiteLLM often prioritizes env vars or requires them for openai/ custom providers
-            # independent of what is passed in the constructor in some versions/environments.
-            # We capture original values to restore them, ensuring we don't break other tools (like standard OpenAI).
-            original_api_key = os.environ.get("OPENAI_API_KEY")
-            original_api_base = os.environ.get("OPENAI_API_BASE")
+        # Get cached LLM
+        llm = self._get_llm(vision_model)
 
-            if GlobalConfig.GROK_API_KEY:
-                os.environ["OPENAI_API_KEY"] = GlobalConfig.GROK_API_KEY
-                os.environ["OPENAI_API_BASE"] = "https://api.x.ai/v1"
-            
-            try:
-                llm = LLM(
-                    model="openai/" + vision_model,
-                    base_url="https://api.x.ai/v1",
-                    api_key=GlobalConfig.GROK_API_KEY
-                )
-                logger.info(f"Using Grok LLM ({vision_model}) for Agents")
-            finally:
-                # Restore original environment variables to prevent side effects
-                if original_api_key:
-                    os.environ["OPENAI_API_KEY"] = original_api_key
-                elif "OPENAI_API_KEY" in os.environ:
-                    del os.environ["OPENAI_API_KEY"]
-                
-                if original_api_base:
-                    os.environ["OPENAI_API_BASE"] = original_api_base
-                elif "OPENAI_API_BASE" in os.environ:
-                    del os.environ["OPENAI_API_BASE"]
-        elif vision_model.lower().startswith("gemini"):
-            from crewai import LLM
-            llm = LLM(
-                model="gemini/" + vision_model,
-                api_key=GlobalConfig.GEMINI_API_KEY
-            )
-            logger.info(f"Using Gemini LLM ({vision_model}) for Agents")
-        else:
-            llm = vision_model # "gpt-4o"
-            logger.info(f"Using default LLM ({vision_model}) for Agents")
-
-        # Initialize Agents (Analyst no longer needs tool)
-        analyst = self._create_analyst(template_dir, llm)
-        turbo_engineer = self._create_turbo_engineer(template_dir, llm)
-        engineer = self._create_engineer(llm) # Legacy engineer (WAN2.2)
+        # Initialize or get cached Agents
+        analyst_key = f"analyst_{template_dir}_{vision_model}"
+        if analyst_key not in self._cached_agents:
+            self._cached_agents[analyst_key] = self._create_analyst(template_dir, llm)
+        analyst = self._cached_agents[analyst_key]
+        
+        turbo_key = f"turbo_{template_dir}_{vision_model}"
+        if turbo_key not in self._cached_agents:
+            self._cached_agents[turbo_key] = self._create_turbo_engineer(template_dir, llm)
+        turbo_engineer = self._cached_agents[turbo_key]
+        
+        engineer_key = f"engineer_{vision_model}"
+        if engineer_key not in self._cached_agents:
+            self._cached_agents[engineer_key] = self._create_engineer(llm)
+        engineer = self._cached_agents[engineer_key]
 
         # Get Hairstyle Config
         available_hairstyles = persona_config.get("hairstyles", [])

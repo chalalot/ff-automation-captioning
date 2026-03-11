@@ -50,10 +50,23 @@ def process_image_task(self, dest_image_path, persona, workflow_type, vision_mod
         logger.error(f"Error in process_image_task for {dest_image_path}: {e}")
         raise e
 
+# Global instances to reuse across task executions
+_workflow = None
+_client = None
+_storage = None
+
+def get_instances():
+    global _workflow, _client, _storage
+    if _workflow is None:
+        _workflow = ImageToPromptWorkflow(verbose=False)
+    if _client is None:
+        _client = ComfyUIClient()
+    if _storage is None:
+        _storage = ImageLogsStorage()
+    return _workflow, _client, _storage
+
 async def async_process_image(dest_image_path, persona, workflow_type, vision_model, variation_count, strength_model, seed_strategy, base_seed, width, height, lora_name, lora_low, lora_high, task):
-    workflow = ImageToPromptWorkflow(verbose=False)
-    client = ComfyUIClient()
-    storage = ImageLogsStorage()
+    workflow, client, storage = get_instances()
     
     logger.info(f"Generating {variation_count} prompt(s) for {dest_image_path}...")
     task.update_state(state='GENERATING_PROMPT', meta={'status': f"🤖 CrewAI analyzing image and writing {variation_count} prompt(s)...", 'progress': 40})

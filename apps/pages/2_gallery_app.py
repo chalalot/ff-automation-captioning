@@ -79,8 +79,12 @@ def move_image(filename, source_dir, dest_dir, new_name=None):
         st.error(f"Error moving {filename}: {e}")
         return False
 
-@st.cache_data(ttl=5, show_spinner="Loading gallery data...")
-def load_gallery_data(directory):
+def get_dir_mtime(directory):
+    if not os.path.exists(directory): return 0
+    return os.stat(directory).st_mtime
+
+@st.cache_data(ttl=60, show_spinner="Loading gallery data...")
+def load_gallery_data(directory, _mtime_buster=0):
     """
     Fetch DB records and file list from a specific directory.
     """
@@ -141,8 +145,8 @@ def load_gallery_data(directory):
         })
     return items
 
-@st.cache_data(ttl=10, show_spinner=False)
-def get_all_stats():
+@st.cache_data(ttl=60, show_spinner=False)
+def get_all_stats(_cache_buster=0):
     """
     Scans all folders to build aggregate statistics.
     Returns a DataFrame.
@@ -527,9 +531,24 @@ with col_refresh:
         get_all_stats.clear()
         st.rerun()
 
+# --- Debug Info ---
+with st.expander("🛠️ Debug Information", expanded=False):
+    st.write(f"**OUTPUT_DIR Configured Path:** `{OUTPUT_DIR}`")
+    st.write(f"**OUTPUT_DIR Absolute Path:** `{os.path.abspath(OUTPUT_DIR)}`")
+    
+    if os.path.exists(OUTPUT_DIR):
+        st.success(f"Directory exists!")
+        all_files = os.listdir(OUTPUT_DIR)
+        valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
+        valid_images = [f for f in all_files if f.lower().endswith(valid_exts)]
+        st.write(f"**Total files in directory:** {len(all_files)}")
+        st.write(f"**Valid image files:** {len(valid_images)}")
+    else:
+        st.error(f"Directory DOES NOT exist at this path!")
+
 # 1. Statistics Table
 st.markdown("### 📊 Generation Statistics")
-df_stats = get_all_stats()
+df_stats = get_all_stats(int(time.time() / 10))
 if not df_stats.empty:
     st.dataframe(
         df_stats, 
@@ -579,21 +598,21 @@ def apply_filters(items, personas):
 # 1. Wait Tab
 with tab1:
     st.subheader("Wait for Approvals")
-    wait_items = load_gallery_data(OUTPUT_DIR)
+    wait_items = load_gallery_data(OUTPUT_DIR, get_dir_mtime(OUTPUT_DIR))
     filtered_wait = apply_filters(wait_items, selected_personas)
     view_gallery_fragment(filtered_wait, 'wait', OUTPUT_DIR, grouping_mode)
 
 # 2. Approved Tab
 with tab2:
     st.subheader("Approved Images")
-    approved_items = load_gallery_data(APPROVED_DIR)
+    approved_items = load_gallery_data(APPROVED_DIR, get_dir_mtime(APPROVED_DIR))
     filtered_approved = apply_filters(approved_items, selected_personas)
     view_gallery_fragment(filtered_approved, 'approved', APPROVED_DIR, grouping_mode)
 
 # 3. Disapproved Tab
 with tab3:
     st.subheader("Disapproved Images")
-    disapproved_items = load_gallery_data(DISAPPROVED_DIR)
+    disapproved_items = load_gallery_data(DISAPPROVED_DIR, get_dir_mtime(DISAPPROVED_DIR))
     filtered_disapproved = apply_filters(disapproved_items, selected_personas)
     view_gallery_fragment(filtered_disapproved, 'disapproved', DISAPPROVED_DIR, grouping_mode)
 
