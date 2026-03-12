@@ -688,8 +688,6 @@ with col1:
                     height=height,
                     vision_model=vision_model,
                     lora_name=lora_name_override,
-                    lora_low=lora_low_override,
-                    lora_high=lora_high_override,
                     variation_count=variation_count
                 ))
                 
