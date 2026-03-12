@@ -1,0 +1,154 @@
+{
+  "9": {
+    "inputs": {
+      "filename_prefix": "z-image",
+      "images": [
+        "43",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "39": {
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "40": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "41": {
+    "inputs": {
+      "width": 1088,
+      "height": 1600,
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "42": {
+    "inputs": {
+      "conditioning": [
+        "45",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "ConditioningZeroOut"
+    }
+  },
+  "43": {
+    "inputs": {
+      "samples": [
+        "44",
+        0
+      ],
+      "vae": [
+        "40",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "44": {
+    "inputs": {
+      "seed": 942141222141986,
+      "steps": 9,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "47",
+        0
+      ],
+      "positive": [
+        "45",
+        0
+      ],
+      "negative": [
+        "42",
+        0
+      ],
+      "latent_image": [
+        "41",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "45": {
+    "inputs": {
+      "text": "A beautiful girl with European features, aged approximately 22-23 years old, is the central figure of this high-detail airport transit photograph.\n\nThe scene is captured in a full-body vertical composition from a high-angle bird’s-eye perspective, looking down at the subject in her seated position. A wide-angle lens is utilized, introducing a characteristic perspective distortion where the subject's lower extremities and the adjacent suitcase appear elongated toward the bottom edge of the frame, while the upper body appears slightly compressed. The composition maintains a clinical edge-to-edge clarity, keeping both the foreground subject and distant terminal elements within the acceptable circle of confusion.\n\nShe is seated and reclined back into an airport lounge chair, with her spine in a relaxed posterior lean and her weight centered on the hips and glutes. Her legs are extended fully forward, resting parallel to each other on the floor plane and angled slightly to the left of the vertical axis. Both arms are flexed at the elbows, with her hands positioned near her lap and partially concealed by oversized sleeves. Her head is tilted sharply downward in anterior cervical flexion and turned toward her right shoulder, keeping her gaze completely away from the lens.\n\nHer body is very sexy with large chest, a slim waist with a deep inward curve, round hips and large butt\n\nShe is draped in a coordinated two-piece heavy-gauge intarsia knit ensemble in 'Jet Black,' consisting of an oversized zip-up hooded cardigan and form-fitting mini-shorts. The 'Jet Black' fabric exhibits a sculpted, rigid volume held by a thick wool-cotton blend, featuring a full-length silver metal zipper and thick ribbed cuffs. The outfit is adorned with 'Fair Isle' inspired 'Arctic White' intarsia patterns featuring polar bears and geometric snowflake peaks, possessing a raised, fuzzy texture against the matte base. Her look is detailed with white ribbed mid-calf knit socks and knee-high 'Jet Black' leather boots featuring a front lace-up closure and multiple heavy-duty adjustable buckle-straps, while large over-ear 'Aluminium/White' headphones are worn over her beanie. Beside her sits a silver ribbed aluminum suitcase with vertical grooves, marked by multiple adhesive baggage tags and barcodes attached to its handle.\n\nHer hair is platinum blonde, styled in a short platinum blonde bob with messy layered waves that provide significant volume and a sense of dynamic hair flow. The layered hairstyle features a high-shine enhancement, catching the soft overhead light to emphasize the textured, volumized appearance and pearlescent tonal quality of the blonde. The messy waves flow from beneath her black chunky ribbed beanie, following the downward tilt of her head with natural imperfection and individual strand separation.\n\nBecause the girl's face was hidden, tilted sharply downward and obscured by the downward fall of her hair and the low-slung brim of her beanie, the girl's expression could not be seen. The focus remains on the structural angle of the head and the sharp anterior cervical flexion, conveying a mood of quiet detachment during travel.\n\nIlluminated by diffused overhead commercial lighting from fluorescent or LED panels, the scene features a soft and wraparound light quality that produces soft-edged shadows beneath the legs and furniture with minimal specular glare. The color science reflects a neutral, cool-toned palette with a grounded, realistic bias in the shadows, creating a high contrast between the 'Jet Black' wardrobe and the grey and tan environment. Captured with high aperture photography (f/8), there is a deep depth of field ensuring that both the subject and all background environmental details are in sharp focus and crystal clear.\n\nThe subject sits on a low-pile airport carpet featuring a complex triangular geometric pattern in shades of grey, tan, and muted orange. Behind her, the space is occupied by airport terminal seating consisting of molded plastic shells, perforated metal backrests, and silver metal armrests. A small brown laminate side table with a black metal base stands nearby, holding a clear plastic cup with a dome lid and a dark iced coffee inside. Yellow safety stickers on the hardware feature black icons and Chinese characters such as \"请勿坐/站\" and \"小心夹手,\" while the ribbed aluminum suitcase shows authentic scuff marks and surface scratches from handling.\n\nThe image was captured using a high-end mobile sensor or a digital compact camera with an integrated on-camera flash. This is evident in the high shutter speed that freezes the textures of the knit loops and hair strands without blur, the clinical and even light distribution, and the overall lifestyle snapshot aesthetic that anchors the scene in a realistic, non-commercial transit context.",
+      "clip": [
+        "39",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "46": {
+    "inputs": {
+      "unet_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "47": {
+    "inputs": {
+      "shift": 3,
+      "model": [
+        "53",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "ModelSamplingAuraFlow"
+    }
+  },
+  "53": {
+    "inputs": {
+      "lora_name": "z-image-persona/emi_turbo_v2.safetensors",
+      "strength_model": 0.9,
+      "model": [
+        "46",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  }
+}
