@@ -834,5 +834,43 @@ with col2:
     
     st.info("🔄 **Auto-check is active.**\n\nThe system automatically checks for completed images every 1 minute in the background. You don't need to do anything.")
     
-    # Optional: Display last check time if we were tracking it in a shared state, 
-    # but for now a simple static message suffices as requested.
+    with st.expander("🛠️ Manual Check & Logs", expanded=False):
+        log_populate_placeholder = st.empty()
+        log_populate_placeholder.info("Logs for manual populating will appear here...")
+        
+        if st.button("Force Check Now", type="secondary"):
+            with st.spinner("Checking ComfyUI Cloud for completed images..."):
+                try:
+                    logger_pop = StreamlitLogger(log_populate_placeholder)
+                    with contextlib.redirect_stdout(logger_pop), contextlib.redirect_stderr(logger_pop):
+                        # Use our own logger to capture
+                        import logging
+                        pop_logger = logging.getLogger("PopulateImages")
+                        
+                        # Add Streamlit handler
+                        sl_handler = StreamlitLogHandler(logger_pop)
+                        sl_handler.setFormatter(logging.Formatter('%(message)s'))
+                        pop_logger.addHandler(sl_handler)
+                        
+                        try:
+                            asyncio.run(run_populate_script())
+                        finally:
+                            pop_logger.removeHandler(sl_handler)
+                            
+                    st.success("Manual check complete!")
+                except Exception as e:
+                    st.error(f"Error checking for downloads: {e}")
+
+    st.markdown("### 📥 Recently Downloaded")
+    # Fetch recent completed and downloaded from DB
+    completed_executions = [exc for exc in storage.get_all_completed_executions() if exc.get('result_image_path')]
+    # Sort by updated_at or created_at
+    completed_executions.sort(key=lambda x: x.get('updated_at', x.get('created_at', '')), reverse=True)
+    recent_downloads = completed_executions[:5]
+    
+    if recent_downloads:
+        for exc in recent_downloads:
+            fname = os.path.basename(exc['result_image_path'])
+            st.markdown(f"✅ `{fname}` *(Execution: {exc['execution_id'][:8]}...)*")
+    else:
+        st.info("No recently downloaded images found.")

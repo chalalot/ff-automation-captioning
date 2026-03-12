@@ -588,6 +588,55 @@ class ComfyUIClient:
             logger.error(f"Image generation workflow failed: {e}")
             raise
 
+    async def download_image_by_path(self, image_path: str) -> bytes:
+        """
+        Download an image directly by its path (filename and query parameters).
+        """
+        if not self.cloud_api_url:
+            raise ComfyUIConfigError("CLOUD_COMFY_API_URL is not set.")
+        
+        filename_part = image_path.split('?')[0]
+        query_part = image_path.split('?')[1] if '?' in image_path else "type=output"
+        
+        view_url = f"{self.cloud_api_url}/view?filename={os.path.basename(filename_part)}&{query_part}"
+        if '/' in filename_part:
+            sub = os.path.dirname(filename_part)
+            view_url += f"&subfolder={sub}"
+        
+        logger.info(f"📥 Downloading image via path from Cloud: {view_url}")
+        headers = {}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+        
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            resp = await client.get(view_url, headers=headers)
+            resp.raise_for_status()
+            return resp.content
+
+    async def download_image(self, execution_id: str) -> bytes:
+        """
+        Download an image by execution ID (fallback). Check status to get the path.
+        """
+        status_data = await self.check_status(execution_id)
+        if status_data.get("status") != "completed":
+            raise ComfyUIAPIError(f"Cannot download image for incomplete execution {execution_id}")
+            
+        output_images = status_data.get("output_images", [])
+        if not output_images:
+            raise ComfyUIAPIError(f"No output images found for execution {execution_id}")
+            
+        first_output = output_images[0]
+        image_path = None
+        for key, paths in first_output.items():
+            if paths and len(paths) > 0:
+                image_path = paths[0]
+                break
+                
+        if not image_path:
+            raise ComfyUIAPIError(f"No image path found in output_images for {execution_id}")
+            
+        return await self.download_image_by_path(image_path)
+
     async def generate_and_upload(
         self,
         positive_prompt: str,
