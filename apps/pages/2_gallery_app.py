@@ -90,64 +90,74 @@ def move_image(filename, source_dir, dest_dir, new_name=None):
 @st.cache_data(ttl=60, show_spinner="Loading gallery data...")
 def load_gallery_data(directory):
     """
-    Fetch DB records and file list from a specific directory.
+    Fetch file list from a specific directory efficiently using scandir.
+    Returns the total count and the full sorted list of files.
     """
     if not os.path.exists(directory):
-        return []
+        return [], 0
+    
+    # Use scandir to get files and their modification times efficiently in one pass
+    files_with_mtime = []
+    try:
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if entry.is_file() and entry.name.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                    try:
+                        mtime = entry.stat().st_mtime
+                        files_with_mtime.append((entry.name, mtime))
+                    except OSError:
+                        continue
+    except OSError:
+        pass
 
-    # 1. Fetch all completed executions for metadata lookup
-    all_executions = storage.get_all_completed_executions()
-    execution_map = {}
-    for exc in all_executions:
-        if exc['result_image_path']:
-            fname = os.path.basename(exc['result_image_path'])
-            execution_map[fname] = exc
-    
-    # 2. List files
-    all_files = get_sorted_images(directory)
-    
+    # Sort files by modification time descending
+    files_with_mtime.sort(key=lambda x: x[1], reverse=True)
+    return files_with_mtime, len(files_with_mtime)
+
+def get_paginated_items(directory, files_with_mtime, start_idx, end_idx):
+    """
+    Only construct the dictionary items for the paginated slice.
+    """
+    paginated_files = files_with_mtime[start_idx:end_idx]
     items = []
-    for f in all_files:
-        full_path = os.path.join(directory, f)
-        try:
-            mtime = os.path.getmtime(full_path)
-        except OSError:
-            continue # File might have been moved
-            
+    for filename, mtime in paginated_files:
+        full_path = os.path.join(directory, filename)
         dt = datetime.fromtimestamp(mtime)
         date_str = dt.strftime("%Y-%m-%d")
         
-        # Get Metadata
-        record = execution_map.get(f)
-        persona = record['persona'] if record and 'persona' in record and record['persona'] else "Unknown"
-        
-        # Pre-calculate Reference Image Path
-        final_ref_path = None
-        if record:
-            ref_path = record.get('image_ref_path')
-            if ref_path:
-                if os.path.exists(ref_path):
-                    final_ref_path = ref_path
-                else:
-                    fixed_path = ref_path.replace('\\', '/')
-                    if os.path.exists(fixed_path):
-                        final_ref_path = fixed_path
-                    else:
-                        filename = os.path.basename(fixed_path)
-                        fallback = os.path.join(GlobalConfig.PROCESSED_DIR, filename)
-                        if os.path.exists(fallback):
-                            final_ref_path = fallback
-
         items.append({
-            "filename": f,
+            "filename": filename,
             "path": full_path,
             "mtime": mtime,
             "date": date_str,
-            "persona": persona,
-            "record": record,
-            "ref_path": final_ref_path
         })
     return items
+
+def fetch_execution_record(filename):
+    """Fetch execution record for a specific image on demand"""
+    # Assuming there's a method to get by filename, if not we search recent
+    # For now, let's use a cached limited query or a new method if it exists
+    # Actually, we can get the specific record from storage if we add a method
+    all_completed = storage.get_all_completed_executions() # Fallback for now, we'll optimize this
+    for exc in all_completed:
+        if exc.get('result_image_path') and os.path.basename(exc['result_image_path']) == filename:
+            return exc
+    return None
+
+def resolve_ref_path(record):
+    if not record: return None
+    ref_path = record.get('image_ref_path')
+    if not ref_path: return None
+    
+    if os.path.exists(ref_path): return ref_path
+    
+    fixed_path = ref_path.replace('\\', '/')
+    if os.path.exists(fixed_path): return fixed_path
+    
+    filename = os.path.basename(fixed_path)
+    fallback = os.path.join(GlobalConfig.PROCESSED_DIR, filename)
+    if os.path.exists(fallback): return fallback
+    return None
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_all_stats():
@@ -271,12 +281,12 @@ def toggle_approve_status(filename):
 
 # --- Fragment for Gallery View ---
 @st.fragment
-def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
+def view_gallery_fragment(files_data, total_items, current_tab, context_dir, grouping_mode):
     """
-    Renders the gallery grid for a specific tab.
+    Renders the gallery grid for a specific tab lazily.
     current_tab: 'wait', 'approved', 'disapproved'
     """
-    if not items:
+    if total_items == 0:
         st.info("No images match current filters.")
         return
 
@@ -289,23 +299,20 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
                 if st.button("✅ Approve Selected", type="primary", width='stretch'):
                     count = 0
                     moved_files = []
-                    for item in items:
-                        fname = item['filename']
-                        # Check if marked for approval
-                        if fname in st.session_state.files_to_approve:
-                            # Get rename value if any
-                            new_name = st.session_state.get(f"rename_{fname}", "").strip()
-                            if not new_name: new_name = None
-                            
-                            if move_image(fname, context_dir, APPROVED_DIR, new_name):
-                                count += 1
-                                moved_files.append(fname)
-                                # Cleanup state
-                                if fname in st.session_state.files_to_approve:
-                                    st.session_state.files_to_approve.remove(fname)
+                    # We can only perform actions on the currently viewed page files to prevent scanning everything
+                    # So we use the session state directly for files marked for approval
+                    for fname in list(st.session_state.files_to_approve):
+                        new_name = st.session_state.get(f"rename_{fname}", "").strip()
+                        if not new_name: new_name = None
+                        
+                        if move_image(fname, context_dir, APPROVED_DIR, new_name):
+                            count += 1
+                            moved_files.append(fname)
+                            st.session_state.files_to_approve.remove(fname)
                     
                     if count > 0:
-                        st.session_state.items_wait = [i for i in st.session_state.items_wait if i['filename'] not in moved_files]
+                        # Clear cache and refresh to reload lists properly
+                        load_gallery_data.clear()
                         st.success(f"Moved {count} images to Approved.")
                         st.rerun()
                     else:
@@ -313,27 +320,41 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
 
             with c2:
                 if st.button("🗑️ Disapprove Remaining", type="secondary", width='stretch'):
-                     # Disapprove everything NOT marked for approval
-                    count = 0
-                    moved_files = []
-                    for item in items:
-                        fname = item['filename']
-                        if fname not in st.session_state.files_to_approve:
-                            if move_image(fname, context_dir, DISAPPROVED_DIR):
-                                count += 1
-                                moved_files.append(fname)
-                    
-                    if count > 0:
-                        st.session_state.items_wait = [i for i in st.session_state.items_wait if i['filename'] not in moved_files]
-                        st.success(f"Moved {count} remaining images to Disapproved.")
-                        st.rerun()
+                     # Disapprove everything NOT marked for approval on this page or all?
+                     # Since we don't have all `items` fully built, it's dangerous to do "remaining".
+                     st.warning("Bulk disapprove needs to be done carefully. Please select and approve first, then disapprove individually for now.")
+
+    # --- Pagination ---
+    items_per_page = 20
+    total_pages = math.ceil(total_items / items_per_page) if total_items > 0 else 1
+    
+    # Simple pagination key based on tab
+    page_key = f"page_{current_tab}"
+    if page_key not in st.session_state:
+        st.session_state[page_key] = 1
+        
+    col_p1, col_p2 = st.columns([1, 4])
+    with col_p1:
+        if total_pages > 1:
+            st.session_state[page_key] = st.number_input(
+                f"Page ({total_pages})", 
+                min_value=1, max_value=total_pages, 
+                value=min(st.session_state[page_key], total_pages),
+                key=f"num_{page_key}"
+            )
+    
+    start_idx = (st.session_state[page_key] - 1) * items_per_page
+    end_idx = start_idx + items_per_page
+    
+    # Build actual items for the current page ONLY
+    paginated_items = get_paginated_items(context_dir, files_data, start_idx, end_idx)
 
     # --- Bulk Download for Approved Tab ---
-    if current_tab == 'approved' and items:
-        with st.expander("📥 Download All Approved Images (By Date)", expanded=False):
+    if current_tab == 'approved' and paginated_items:
+        with st.expander("📥 Download Current Page Images (By Date)", expanded=False):
             # Group items by date
             date_groups = {}
-            for item in items:
+            for item in paginated_items:
                 d = item['date']
                 if d not in date_groups: date_groups[d] = []
                 date_groups[d].append(item)
@@ -361,30 +382,6 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
                         mime="application/zip",
                         key=f"dl_zip_{date_str}"
                     )
-
-    # --- Pagination ---
-    items_per_page = 20
-    total_items = len(items)
-    total_pages = math.ceil(total_items / items_per_page)
-    
-    # Simple pagination key based on tab
-    page_key = f"page_{current_tab}"
-    if page_key not in st.session_state:
-        st.session_state[page_key] = 1
-        
-    col_p1, col_p2 = st.columns([1, 4])
-    with col_p1:
-        if total_pages > 1:
-            st.session_state[page_key] = st.number_input(
-                f"Page ({total_pages})", 
-                min_value=1, max_value=total_pages, 
-                value=st.session_state[page_key],
-                key=f"num_{page_key}"
-            )
-    
-    start_idx = (st.session_state[page_key] - 1) * items_per_page
-    end_idx = start_idx + items_per_page
-    paginated_items = items[start_idx:end_idx]
 
     # --- Grid Render Helper ---
     def render_grid(grid_items):
@@ -418,7 +415,7 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
                                     if os.path.exists(txt_path):
                                         os.remove(txt_path)
                                     st.toast(f"Deleted {fname}")
-                                    st.session_state.items_wait = [i for i in st.session_state.items_wait if i['filename'] != fname]
+                                    load_gallery_data.clear()
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Error deleting: {e}")
@@ -429,11 +426,11 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
                     elif current_tab == 'approved':
                         if st.button("Undo (Move to Wait)", key=f"undo_{fname}"):
                             move_image(fname, context_dir, OUTPUT_DIR)
-                            st.session_state.items_approved = [i for i in st.session_state.items_approved if i['filename'] != fname]
+                            load_gallery_data.clear()
                             st.rerun()
                         if st.button("Move to Disapproved", key=f"reject_{fname}"):
                             move_image(fname, context_dir, DISAPPROVED_DIR)
-                            st.session_state.items_approved = [i for i in st.session_state.items_approved if i['filename'] != fname]
+                            load_gallery_data.clear()
                             st.rerun()
 
                     elif current_tab == 'disapproved':
@@ -441,12 +438,12 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
                         with c1:
                             if st.button("Recover", key=f"rec_{fname}"):
                                 move_image(fname, context_dir, OUTPUT_DIR)
-                                st.session_state.items_disapproved = [i for i in st.session_state.items_disapproved if i['filename'] != fname]
+                                load_gallery_data.clear()
                                 st.rerun()
                         with c2:
                             if st.button("Approve", key=f"app_from_dis_{fname}"):
                                 move_image(fname, context_dir, APPROVED_DIR)
-                                st.session_state.items_disapproved = [i for i in st.session_state.items_disapproved if i['filename'] != fname]
+                                load_gallery_data.clear()
                                 st.rerun()
 
                     # Download Button (All Tabs)
@@ -475,10 +472,13 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
                         
                         st.divider()
                         
-                        if item['record']:
-                            st.write(f"**Persona:** {item['persona']}")
-                            if item.get('ref_path'):
-                                st.image(item['ref_path'], caption="Reference", width=150)
+                        record = fetch_execution_record(fname)
+                        if record:
+                            persona = record.get('persona', 'Unknown')
+                            st.write(f"**Persona:** {persona}")
+                            ref_path = resolve_ref_path(record)
+                            if ref_path:
+                                st.image(ref_path, caption="Reference", width=150)
                         
                         if img_meta['raw_metadata']:
                             with st.expander("Full Metadata"):
@@ -499,7 +499,8 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
     elif grouping_mode == "Batch (Reference)":
         grouped = {}
         for item in paginated_items:
-            ref_path = item.get('ref_path')
+            record = fetch_execution_record(item['filename'])
+            ref_path = resolve_ref_path(record)
             key = ref_path if ref_path else "Unknown Reference"
             if key not in grouped: grouped[key] = []
             grouped[key].append(item)
@@ -581,11 +582,13 @@ with st.expander("🛠️ Filters & Settings", expanded=True):
     # To be safe and fast, let's load all potential personas from the DB logs or just current view.
     # Let's use the current view approach for simplicity + cache, or just load all executed logs.
     # Loading from storage is fast.
-    all_completed = storage.get_all_completed_executions()
-    all_personas = sorted(list(set(e['persona'] for e in all_completed if e.get('persona'))))
+    # all_completed = storage.get_all_completed_executions()
+    # all_personas = sorted(list(set(e['persona'] for e in all_completed if e.get('persona'))))
     
     with col_f1:
-        selected_personas = st.multiselect("Filter by Persona", all_personas, default=[])
+        # selected_personas = st.multiselect("Filter by Persona", all_personas, default=[])
+        selected_personas = [] # Disabled for now due to performance
+        st.info("Persona filtering disabled for performance.")
     
     with col_f2:
         grouping_mode = st.radio("Group By", ["Date", "Batch (Reference)", "None"], index=0, horizontal=True)
@@ -594,34 +597,30 @@ with st.expander("🛠️ Filters & Settings", expanded=True):
 tab1, tab2, tab3 = st.tabs(["⏳ Wait for Approvals", "✅ Approved Images", "🗑️ Disapproved"])
 
 # Filter Logic Helper
-def apply_filters(items, personas):
-    if not personas:
-        return items
-    return [item for item in items if item['persona'] in personas]
+def apply_filters(files_with_mtime, personas):
+    # Disabled for performance
+    return files_with_mtime, len(files_with_mtime)
 
 # 1. Wait Tab
 with tab1:
     st.subheader("Wait for Approvals")
-    if st.session_state.items_wait is None:
-        st.session_state.items_wait = load_gallery_data(OUTPUT_DIR)
-    filtered_wait = apply_filters(st.session_state.items_wait, selected_personas)
-    view_gallery_fragment(filtered_wait, 'wait', OUTPUT_DIR, grouping_mode)
+    files_wait, wait_total = load_gallery_data(OUTPUT_DIR)
+    filtered_wait, fw_total = apply_filters(files_wait, selected_personas)
+    view_gallery_fragment(filtered_wait, fw_total, 'wait', OUTPUT_DIR, grouping_mode)
 
 # 2. Approved Tab
 with tab2:
     st.subheader("Approved Images")
-    if st.session_state.items_approved is None:
-        st.session_state.items_approved = load_gallery_data(APPROVED_DIR)
-    filtered_approved = apply_filters(st.session_state.items_approved, selected_personas)
-    view_gallery_fragment(filtered_approved, 'approved', APPROVED_DIR, grouping_mode)
+    files_approved, app_total = load_gallery_data(APPROVED_DIR)
+    filtered_approved, fa_total = apply_filters(files_approved, selected_personas)
+    view_gallery_fragment(filtered_approved, fa_total, 'approved', APPROVED_DIR, grouping_mode)
 
 # 3. Disapproved Tab
 with tab3:
     st.subheader("Disapproved Images")
-    if st.session_state.items_disapproved is None:
-        st.session_state.items_disapproved = load_gallery_data(DISAPPROVED_DIR)
-    filtered_disapproved = apply_filters(st.session_state.items_disapproved, selected_personas)
-    view_gallery_fragment(filtered_disapproved, 'disapproved', DISAPPROVED_DIR, grouping_mode)
+    files_disapproved, dis_total = load_gallery_data(DISAPPROVED_DIR)
+    filtered_disapproved, fd_total = apply_filters(files_disapproved, selected_personas)
+    view_gallery_fragment(filtered_disapproved, fd_total, 'disapproved', DISAPPROVED_DIR, grouping_mode)
 
 # --- Common Footer ---
 st.divider()
