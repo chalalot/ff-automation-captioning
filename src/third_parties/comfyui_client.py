@@ -137,6 +137,34 @@ class ComfyUIClient:
         self.max_poll_time = max_poll_time
         self.max_retries = max_retries
 
+    async def get_queue(self) -> Dict[str, Any]:
+        """
+        Fetch the current queue status from ComfyUI API.
+        Returns the queue running and pending lists.
+        """
+        if not self.cloud_api_url:
+            raise ComfyUIConfigError("CLOUD_COMFY_API_URL is not set.")
+            
+        url = f"{self.cloud_api_url}/queue"
+        
+        logger.info(f"🔵 ComfyUI Cloud Request: GET {url}")
+        headers = {}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+            
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+                return data
+        except httpx.HTTPStatusError as e:
+            logger.error(f"❌ Get queue HTTP Error ({e.response.status_code}): {e.response.text}")
+            raise ComfyUIAPIError(f"Get queue failed ({e.response.status_code}): {e.response.text}")
+        except Exception as e:
+            logger.error(f"❌ Failed to get queue: {e}")
+            raise ComfyUIAPIError(f"Get queue failed: {e}")
+
     async def queue_prompt(self, prompt_workflow: Dict[str, Any]) -> str:
         """
         Queue a prompt to the Cloud ComfyUI API (Standard /prompt endpoint).
