@@ -39,6 +39,14 @@ if "selected_files" not in st.session_state:
     st.session_state.selected_files = set()
 if "files_to_approve" not in st.session_state:
     st.session_state.files_to_approve = set()
+    
+# Optimistic UI States
+if "items_wait" not in st.session_state:
+    st.session_state.items_wait = None
+if "items_approved" not in st.session_state:
+    st.session_state.items_approved = None
+if "items_disapproved" not in st.session_state:
+    st.session_state.items_disapproved = None
 
 # --- Helper Functions ---
 
@@ -79,12 +87,8 @@ def move_image(filename, source_dir, dest_dir, new_name=None):
         st.error(f"Error moving {filename}: {e}")
         return False
 
-def get_dir_mtime(directory):
-    if not os.path.exists(directory): return 0
-    return os.stat(directory).st_mtime
-
 @st.cache_data(ttl=60, show_spinner="Loading gallery data...")
-def load_gallery_data(directory, _mtime_buster=0):
+def load_gallery_data(directory):
     """
     Fetch DB records and file list from a specific directory.
     """
@@ -146,7 +150,7 @@ def load_gallery_data(directory, _mtime_buster=0):
     return items
 
 @st.cache_data(ttl=60, show_spinner=False)
-def get_all_stats(_cache_buster=0):
+def get_all_stats():
     """
     Scans all folders to build aggregate statistics.
     Returns a DataFrame.
@@ -284,6 +288,7 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
             with c1:
                 if st.button("✅ Approve Selected", type="primary", width='stretch'):
                     count = 0
+                    moved_files = []
                     for item in items:
                         fname = item['filename']
                         # Check if marked for approval
@@ -294,14 +299,14 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
                             
                             if move_image(fname, context_dir, APPROVED_DIR, new_name):
                                 count += 1
+                                moved_files.append(fname)
                                 # Cleanup state
                                 if fname in st.session_state.files_to_approve:
                                     st.session_state.files_to_approve.remove(fname)
                     
                     if count > 0:
+                        st.session_state.items_wait = [i for i in st.session_state.items_wait if i['filename'] not in moved_files]
                         st.success(f"Moved {count} images to Approved.")
-                        load_gallery_data.clear()
-                        get_all_stats.clear() # Clear stats cache too
                         st.rerun()
                     else:
                         st.warning("No images selected for approval.")
@@ -310,16 +315,17 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
                 if st.button("🗑️ Disapprove Remaining", type="secondary", width='stretch'):
                      # Disapprove everything NOT marked for approval
                     count = 0
+                    moved_files = []
                     for item in items:
                         fname = item['filename']
                         if fname not in st.session_state.files_to_approve:
                             if move_image(fname, context_dir, DISAPPROVED_DIR):
                                 count += 1
+                                moved_files.append(fname)
                     
                     if count > 0:
+                        st.session_state.items_wait = [i for i in st.session_state.items_wait if i['filename'] not in moved_files]
                         st.success(f"Moved {count} remaining images to Disapproved.")
-                        load_gallery_data.clear()
-                        get_all_stats.clear()
                         st.rerun()
 
     # --- Bulk Download for Approved Tab ---
@@ -412,8 +418,7 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
                                     if os.path.exists(txt_path):
                                         os.remove(txt_path)
                                     st.toast(f"Deleted {fname}")
-                                    load_gallery_data.clear()
-                                    get_all_stats.clear()
+                                    st.session_state.items_wait = [i for i in st.session_state.items_wait if i['filename'] != fname]
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Error deleting: {e}")
@@ -424,13 +429,11 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
                     elif current_tab == 'approved':
                         if st.button("Undo (Move to Wait)", key=f"undo_{fname}"):
                             move_image(fname, context_dir, OUTPUT_DIR)
-                            load_gallery_data.clear()
-                            get_all_stats.clear()
+                            st.session_state.items_approved = [i for i in st.session_state.items_approved if i['filename'] != fname]
                             st.rerun()
                         if st.button("Move to Disapproved", key=f"reject_{fname}"):
                             move_image(fname, context_dir, DISAPPROVED_DIR)
-                            load_gallery_data.clear()
-                            get_all_stats.clear()
+                            st.session_state.items_approved = [i for i in st.session_state.items_approved if i['filename'] != fname]
                             st.rerun()
 
                     elif current_tab == 'disapproved':
@@ -438,14 +441,12 @@ def view_gallery_fragment(items, current_tab, context_dir, grouping_mode):
                         with c1:
                             if st.button("Recover", key=f"rec_{fname}"):
                                 move_image(fname, context_dir, OUTPUT_DIR)
-                                load_gallery_data.clear()
-                                get_all_stats.clear()
+                                st.session_state.items_disapproved = [i for i in st.session_state.items_disapproved if i['filename'] != fname]
                                 st.rerun()
                         with c2:
                             if st.button("Approve", key=f"app_from_dis_{fname}"):
                                 move_image(fname, context_dir, APPROVED_DIR)
-                                load_gallery_data.clear()
-                                get_all_stats.clear()
+                                st.session_state.items_disapproved = [i for i in st.session_state.items_disapproved if i['filename'] != fname]
                                 st.rerun()
 
                     # Download Button (All Tabs)
@@ -529,6 +530,9 @@ with col_refresh:
     if st.button("🔄 Refresh All", type="primary", width='stretch'):
         load_gallery_data.clear()
         get_all_stats.clear()
+        st.session_state.items_wait = None
+        st.session_state.items_approved = None
+        st.session_state.items_disapproved = None
         st.rerun()
 
 # --- Debug Info ---
@@ -548,7 +552,7 @@ with st.expander("🛠️ Debug Information", expanded=False):
 
 # 1. Statistics Table
 st.markdown("### 📊 Generation Statistics")
-df_stats = get_all_stats(int(time.time() / 10))
+df_stats = get_all_stats()
 if not df_stats.empty:
     st.dataframe(
         df_stats, 
@@ -598,22 +602,25 @@ def apply_filters(items, personas):
 # 1. Wait Tab
 with tab1:
     st.subheader("Wait for Approvals")
-    wait_items = load_gallery_data(OUTPUT_DIR, get_dir_mtime(OUTPUT_DIR))
-    filtered_wait = apply_filters(wait_items, selected_personas)
+    if st.session_state.items_wait is None:
+        st.session_state.items_wait = load_gallery_data(OUTPUT_DIR)
+    filtered_wait = apply_filters(st.session_state.items_wait, selected_personas)
     view_gallery_fragment(filtered_wait, 'wait', OUTPUT_DIR, grouping_mode)
 
 # 2. Approved Tab
 with tab2:
     st.subheader("Approved Images")
-    approved_items = load_gallery_data(APPROVED_DIR, get_dir_mtime(APPROVED_DIR))
-    filtered_approved = apply_filters(approved_items, selected_personas)
+    if st.session_state.items_approved is None:
+        st.session_state.items_approved = load_gallery_data(APPROVED_DIR)
+    filtered_approved = apply_filters(st.session_state.items_approved, selected_personas)
     view_gallery_fragment(filtered_approved, 'approved', APPROVED_DIR, grouping_mode)
 
 # 3. Disapproved Tab
 with tab3:
     st.subheader("Disapproved Images")
-    disapproved_items = load_gallery_data(DISAPPROVED_DIR, get_dir_mtime(DISAPPROVED_DIR))
-    filtered_disapproved = apply_filters(disapproved_items, selected_personas)
+    if st.session_state.items_disapproved is None:
+        st.session_state.items_disapproved = load_gallery_data(DISAPPROVED_DIR)
+    filtered_disapproved = apply_filters(st.session_state.items_disapproved, selected_personas)
     view_gallery_fragment(filtered_disapproved, 'disapproved', DISAPPROVED_DIR, grouping_mode)
 
 # --- Common Footer ---
