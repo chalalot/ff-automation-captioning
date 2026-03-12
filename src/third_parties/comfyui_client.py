@@ -292,7 +292,8 @@ class ComfyUIClient:
                         history_response.raise_for_status()
                         history_data = history_response.json()
                         
-                        outputs = history_data.get("outputs", {})
+                        job_data = history_data.get(execution_id, {})
+                        outputs = job_data.get("outputs", {})
                         output_images = []
                         
                         # Flatten outputs
