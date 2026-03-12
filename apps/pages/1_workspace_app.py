@@ -32,7 +32,7 @@ except ImportError:
     from scripts.process_and_queue import main as run_process_script
     from scripts.populate_generated_images import main as run_populate_script
 
-from src.third_parties.comfyui_client import ComfyUIClient, PERSONA_LORA_MAPPING_TURBO, PERSONA_LORA_MAPPING_WAN
+from src.third_parties.comfyui_client import ComfyUIClient, PERSONA_LORA_MAPPING_TURBO
 
 # Title
 st.title("🚀 Workspace: Input & Generation")
@@ -126,7 +126,7 @@ kol_persona_idx = available_personas.index(default_persona)
 kol_persona = st.sidebar.selectbox("KOL Persona", available_personas, index=kol_persona_idx, key="input_kol_persona")
 
 # 2. Workflow
-wf_options = ["Turbo", "WAN2.2"]
+wf_options = ["Turbo"]
 default_wf = get_default("workflow_choice", "Turbo")
 if default_wf not in wf_options: default_wf = "Turbo"
 workflow_choice = st.sidebar.selectbox("Workflow Type", wf_options, index=wf_options.index(default_wf), key="input_workflow_choice")
@@ -166,8 +166,6 @@ strength_model = st.sidebar.slider("Model Strength", min_value=0.0, max_value=2.
 # LoRA Configuration
 st.sidebar.subheader("LoRA Configuration")
 lora_name_override = None
-lora_low_override = None
-lora_high_override = None
 
 if workflow_choice == "Turbo":
     # Get default from mapping OR preset
@@ -180,25 +178,6 @@ if workflow_choice == "Turbo":
         "LoRA Name", 
         value=preset_lora, 
         key=f"lora_turbo_{kol_persona}"
-    )
-elif workflow_choice == "WAN2.2":
-    # Get defaults
-    wan_config = PERSONA_LORA_MAPPING_WAN.get(kol_persona, {"low": "", "high": ""})
-    mapped_low = wan_config.get("low", "")
-    mapped_high = wan_config.get("high", "")
-    
-    preset_low = get_default("lora_low_override", mapped_low) if st.session_state.get("preset_loaded") else mapped_low
-    preset_high = get_default("lora_high_override", mapped_high) if st.session_state.get("preset_loaded") else mapped_high
-    
-    lora_low_override = st.sidebar.text_input(
-        "Low LoRA Name", 
-        value=preset_low, 
-        key=f"lora_wan_low_{kol_persona}"
-    )
-    lora_high_override = st.sidebar.text_input(
-        "High LoRA Name", 
-        value=preset_high, 
-        key=f"lora_wan_high_{kol_persona}"
     )
 
 # Dimensions Configuration
@@ -236,9 +215,7 @@ if st.session_state.get("trigger_save_preset"):
         "seed_strategy": seed_strategy,
         "base_seed": base_seed,
         # LoRAs
-        "lora_name_override": lora_name_override,
-        "lora_low_override": lora_low_override,
-        "lora_high_override": lora_high_override
+        "lora_name_override": lora_name_override
     }
     
     if save_preset(save_name, current_config):

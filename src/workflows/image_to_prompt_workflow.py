@@ -160,7 +160,7 @@ class ImageToPromptWorkflow:
         Args:
             image_path: Path to local image file.
             persona_name: Name of the persona (e.g. "Jennie").
-            workflow_type: Type of workflow ("turbo" or "wan2.2").
+            workflow_type: Type of workflow ("turbo").
             vision_model: The vision model to use ("gpt-4o" or "grok-4-1-fast-non-reasoning").
             variation_count: Number of prompt variations to generate (default: 1).
             
@@ -277,80 +277,44 @@ class ImageToPromptWorkflow:
         # Task 2: Generate Prompt(s)
         generate_prompt_tasks = []
         
-        if workflow_type.lower() == "turbo":
-            # Determine hair color for Turbo
-            hair_color = persona_config.get("hair_color", "Honey-blonde")
-            
-            # Determine hairstyle options
-            header = "  - You MUST choose ONE from this list explicitly (Do not invent others):"
-            
-            hairstyle_list = "\n".join([f"  - {style}" for style in available_hairstyles])
-            hairstyle_options = f"{header}\n{hairstyle_list}"
+        # Determine hair color for Turbo
+        hair_color = persona_config.get("hair_color", "Honey-blonde")
+        
+        # Determine hairstyle options
+        header = "  - You MUST choose ONE from this list explicitly (Do not invent others):"
+        
+        hairstyle_list = "\n".join([f"  - {style}" for style in available_hairstyles])
+        hairstyle_options = f"{header}\n{hairstyle_list}"
 
-            # Load template from file
-            template_path = os.path.join(template_dir, 'turbo_prompt_template.txt')
-            try:
-                with open(template_path, 'r', encoding='utf-8') as f:
-                    turbo_template = f.read()
-            except Exception as e:
-                raise FileNotFoundError(f"Could not load Turbo template from {template_path}: {e}")
+        # Load template from file
+        template_path = os.path.join(template_dir, 'turbo_prompt_template.txt')
+        try:
+            with open(template_path, 'r', encoding='utf-8') as f:
+                turbo_template = f.read()
+        except Exception as e:
+            raise FileNotFoundError(f"Could not load Turbo template from {template_path}: {e}")
 
-            # Safe formatting
-            try:
-                base_instruction = turbo_template.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
-            except KeyError:
-                 base_instruction = turbo_template.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
-            
-            for i in range(variation_count):
-                # No explicit variation instruction; rely on LLM temperature for natural variance.
-                task = Task(
-                    description=base_instruction,
-                    expected_output=f"A detailed paragraph describing the image (Variation {i+1})",
-                    agent=turbo_engineer,
-                    context=[analyze_task]
-                )
-                generate_prompt_tasks.append(task)
-
-        else:
-            # WAN2.2 (Legacy/Default) Logic
-            hairstyle_instruction = f"""
-               - PRIORITY: Use the hairstyle exactly as described in the reference image analysis if it is clear and distinct.
-               - FALLBACK: If the reference hair is unclear, choose ONE from this list:
-               {available_hairstyles}
-            """
-
-            base_instruction = f"""
-                Create a final Image Generation Prompt based on the analysis.
-                 
-                **MANDATORY RULES:**
-                1. **Prefix**: Start with "<lora:{persona_name.lower()}>, Instagirl," (Adjust trigger word if needed for other personas).
-                2. **Subject**: "the girl (22-23 years old)"
-                3. **Hairstyle**: 
-                   {hairstyle_instruction}
-                4. **Camera & Orientation**: You MUST include the specific **Camera Angle** and **Head Direction** keywords from the analysis.
-                5. **Outfit**: You MUST include specific keywords describing the outfit from the analysis.
-                6. **Background**: You MUST include specific keywords describing the background and setting.
-                7. **Length Constraint**: The final output MUST be between 700 and 800 characters long.
-                
-                **OUTPUT FORMAT**:
-                Comma-separated keywords only.
-                """
-            
-            for i in range(variation_count):
-                # No explicit variation instruction; rely on LLM temperature for natural variance.
-                task = Task(
-                    description=base_instruction,
-                    expected_output=f"A single text string of comma-separated keywords (Variation {i+1}).",
-                    agent=engineer,
-                    context=[analyze_task]
-                )
-                generate_prompt_tasks.append(task)
+        # Safe formatting
+        try:
+            base_instruction = turbo_template.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
+        except KeyError:
+             base_instruction = turbo_template.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
+        
+        for i in range(variation_count):
+            # No explicit variation instruction; rely on LLM temperature for natural variance.
+            task = Task(
+                description=base_instruction,
+                expected_output=f"A detailed paragraph describing the image (Variation {i+1})",
+                agent=turbo_engineer,
+                context=[analyze_task]
+            )
+            generate_prompt_tasks.append(task)
 
         # Run Crew
         all_tasks = [analyze_task] + generate_prompt_tasks
         
         crew = Crew(
-            agents=[analyst, turbo_engineer if workflow_type.lower() == "turbo" else engineer],
+            agents=[analyst, turbo_engineer],
             tasks=all_tasks,
             process=Process.sequential,
             memory=False,

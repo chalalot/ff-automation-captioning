@@ -23,7 +23,7 @@ def run_populate_images():
         logger.error(f"Error in run_populate_images: {e}")
 
 @celery_app.task(bind=True, name="tasks.process_image_task")
-def process_image_task(self, dest_image_path, persona, workflow_type, vision_model, variation_count, strength_model, seed_strategy, base_seed, width, height, lora_name, lora_low, lora_high):
+def process_image_task(self, dest_image_path, persona, workflow_type, vision_model, variation_count, strength_model, seed_strategy, base_seed, width, height, lora_name):
     """
     Celery task to run the CrewAI workflow and queue to ComfyUI.
     This runs asynchronously within an event loop since the core components use asyncio.
@@ -42,8 +42,6 @@ def process_image_task(self, dest_image_path, persona, workflow_type, vision_mod
             width=width,
             height=height,
             lora_name=lora_name,
-            lora_low=lora_low,
-            lora_high=lora_high,
             task=self
         ))
     except Exception as e:
@@ -65,7 +63,7 @@ def get_instances():
         _storage = ImageLogsStorage()
     return _workflow, _client, _storage
 
-async def async_process_image(dest_image_path, persona, workflow_type, vision_model, variation_count, strength_model, seed_strategy, base_seed, width, height, lora_name, lora_low, lora_high, task):
+async def async_process_image(dest_image_path, persona, workflow_type, vision_model, variation_count, strength_model, seed_strategy, base_seed, width, height, lora_name, task):
     workflow, client, storage = get_instances()
     
     logger.info(f"Generating {variation_count} prompt(s) for {dest_image_path}...")
@@ -100,9 +98,7 @@ async def async_process_image(dest_image_path, persona, workflow_type, vision_mo
             base_seed=base_seed,
             width=width,
             height=height,
-            lora_name=lora_name,
-            lora_low=lora_low,
-            lora_high=lora_high
+            lora_name=lora_name
         )
         
         if execution_id:

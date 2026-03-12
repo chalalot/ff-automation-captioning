@@ -17,7 +17,7 @@ from tasks import process_image_task
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("ProcessAndQueue")
 
-async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callback=None, strength_model=None, seed_strategy="random", base_seed=0, width="1024", height="1600", vision_model="gpt-4o", lora_name=None, lora_low=None, lora_high=None, variation_count=1):
+async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callback=None, strength_model=None, seed_strategy="random", base_seed=0, width="1024", height="1600", vision_model="gpt-4o", lora_name=None, variation_count=1):
     """
     Main processing loop:
     1. Scans INPUT_DIR for images.
@@ -97,9 +97,7 @@ async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callb
                 base_seed=base_seed,
                 width=width,
                 height=height,
-                lora_name=lora_name,
-                lora_low=lora_low,
-                lora_high=lora_high
+                lora_name=lora_name
             )
             
             logger.info(f"Queued Celery Task ID: {task.id} for {new_filename}")
@@ -118,7 +116,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Process images from INPUT_DIR, generate prompts, and queue to ComfyUI.")
     parser.add_argument("--persona", default="Jennie", help="Persona name")
-    parser.add_argument("--workflow", default="turbo", help="Workflow type (turbo/wan2.2)")
+    parser.add_argument("--workflow", default="turbo", help="Workflow type (turbo)")
     parser.add_argument("--limit", type=int, default=10, help="Max images to process in one run")
     parser.add_argument("--strength_model", default=None, help="Strength of the LoRA model")
     parser.add_argument("--seed_strategy", default="random", help="Seed strategy (random/fixed)")
@@ -127,9 +125,7 @@ if __name__ == "__main__":
     parser.add_argument("--height", default="1600", help="Image height")
     parser.add_argument("--vision_model", default="gpt-4o", help="Vision model (gpt-4o/grok-4-1-fast-non-reasoning)")
     parser.add_argument("--lora_name", default=None, help="LoRA name override for Turbo")
-    parser.add_argument("--lora_low", default=None, help="Low LoRA override for WAN")
-    parser.add_argument("--lora_high", default=None, help="High LoRA override for WAN")
     parser.add_argument("--variation_count", type=int, default=1, help="Number of prompt variations per image")
     args = parser.parse_args()
     
-    asyncio.run(main(persona=args.persona, workflow_type=args.workflow, limit=args.limit, strength_model=args.strength_model, seed_strategy=args.seed_strategy, base_seed=args.base_seed, width=args.width, height=args.height, vision_model=args.vision_model, lora_name=args.lora_name, lora_low=args.lora_low, lora_high=args.lora_high, variation_count=args.variation_count))
+    asyncio.run(main(persona=args.persona, workflow_type=args.workflow, limit=args.limit, strength_model=args.strength_model, seed_strategy=args.seed_strategy, base_seed=args.base_seed, width=args.width, height=args.height, vision_model=args.vision_model, lora_name=args.lora_name, variation_count=args.variation_count))
