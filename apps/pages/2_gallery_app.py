@@ -24,10 +24,12 @@ from src.utils.streamlit_utils import get_sorted_images, fetch_remote_metadata
 OUTPUT_DIR = GlobalConfig.OUTPUT_DIR
 APPROVED_DIR = os.path.join(OUTPUT_DIR, "approved")
 DISAPPROVED_DIR = os.path.join(OUTPUT_DIR, "disapproved")
+THUMBNAILS_DIR = os.path.join(OUTPUT_DIR, ".thumbnails")
 
 # Ensure directories exist
 os.makedirs(APPROVED_DIR, exist_ok=True)
 os.makedirs(DISAPPROVED_DIR, exist_ok=True)
+os.makedirs(THUMBNAILS_DIR, exist_ok=True)
 
 storage = ImageLogsStorage()
 client = ComfyUIClient()
@@ -49,6 +51,30 @@ if "items_disapproved" not in st.session_state:
     st.session_state.items_disapproved = None
 
 # --- Helper Functions ---
+
+def get_thumbnail_path(original_path, filename):
+    """
+    Returns the path to a cached thumbnail for the image, generating it if necessary.
+    """
+    thumb_path = os.path.join(THUMBNAILS_DIR, f"thumb_{filename}")
+    
+    # If thumbnail exists and is newer than original, return it
+    if os.path.exists(thumb_path):
+        if os.path.getmtime(thumb_path) >= os.path.getmtime(original_path):
+            return thumb_path
+            
+    # Generate thumbnail
+    try:
+        with Image.open(original_path) as img:
+            # Convert to RGB if necessary (e.g. for saving as JPEG or if format doesn't support alpha)
+            if img.mode in ('RGBA', 'P'): img = img.convert('RGB')
+            # 512x512 max size for quick previews
+            img.thumbnail((512, 512), Image.Resampling.LANCZOS)
+            img.save(thumb_path, format="JPEG", quality=85)
+        return thumb_path
+    except Exception as e:
+        # Fallback to original if thumbnail generation fails
+        return original_path
 
 def move_image(filename, source_dir, dest_dir, new_name=None):
     """
@@ -391,14 +417,16 @@ def view_gallery_fragment(files_data, total_items, current_tab, context_dir, gro
             cols = st.columns(cols_per_row)
             for idx, item in enumerate(row_items):
                 with cols[idx]:
+                    fname = item['filename']
+                    base_name = os.path.splitext(fname)[0]
+                    thumb_path = get_thumbnail_path(item['path'], fname)
+                    
                     try:
-                        st.image(item['path'], width='stretch')
+                        # Display fast-loading thumbnail
+                        st.image(thumb_path, width='stretch')
                     except Exception:
                         st.error("Error loading image")
                         continue
-                    
-                    fname = item['filename']
-                    base_name = os.path.splitext(fname)[0]
 
                     # Tab Specific Controls
                     if current_tab == 'wait':
