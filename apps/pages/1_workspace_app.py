@@ -78,13 +78,12 @@ preset_col1, preset_col2 = st.sidebar.columns([2, 1])
 if "preset_loaded" not in st.session_state:
     st.session_state.preset_loaded = False
 
-# We ALWAYS load sticky defaults on a completely fresh session (when loaded_config is missing)
-if "loaded_config" not in st.session_state:
+# We ALWAYS load sticky defaults if widget states are completely missing (e.g. fresh reload OR returning from another page)
+if "input_kol_persona" not in st.session_state:
     sticky_config = load_preset("_last_used")
     st.session_state.loaded_config = sticky_config if sticky_config else {}
     
     # Immediately push these values into session state keys so the UI picks them up
-    # This happens only once per fresh browser reload
     for key, st_key, default in [
         ("kol_persona", "input_kol_persona", "Jennie"),
         ("vision_model_choice", "input_vision_model", "ChatGPT (gpt-4o)"),
