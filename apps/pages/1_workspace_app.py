@@ -94,6 +94,8 @@ if "input_kol_persona" not in st.session_state:
         ("height", "input_height", "1600"),
         ("seed_strategy", "input_seed_strategy", "random"),
         ("base_seed", "input_base_seed", 0),
+        ("persona_config_select", "persona_config_select", "Jennie"),
+        ("editor_type_select", "editor_type_select", "instagirl"),
     ]:
         st.session_state[st_key] = st.session_state.loaded_config.get(key, default)
         
@@ -299,7 +301,9 @@ sticky_config = {
     "height": st.session_state.get("input_height", height),
     "seed_strategy": st.session_state.get("input_seed_strategy", seed_strategy),
     "base_seed": st.session_state.get("input_base_seed", base_seed),
-    "lora_name_override": st.session_state.get(f"lora_turbo_{sticky_persona}", lora_name_override)
+    "lora_name_override": st.session_state.get(f"lora_turbo_{sticky_persona}", lora_name_override),
+    "persona_config_select": st.session_state.get("persona_config_select", "Jennie"),
+    "editor_type_select": st.session_state.get("editor_type_select", "instagirl")
 }
 save_preset("_last_used", sticky_config)
 # Reset preset loaded flag so manual widget interactions become the new default
@@ -345,7 +349,12 @@ with st.expander("👤 Persona Configuration", expanded=False):
     col_p_select, col_p_edit = st.columns([1, 2])
     
     with col_p_select:
-        selected_persona_config = st.selectbox("Select Persona to Edit", available_personas, key="persona_config_select")
+        selected_persona_config = st.selectbox(
+            "Select Persona to Edit", 
+            available_personas, 
+            index=available_personas.index(st.session_state.get("persona_config_select", "Jennie")) if st.session_state.get("persona_config_select", "Jennie") in available_personas else 0,
+            key="persona_config_select"
+        )
         
         # Load current config
         current_p_config = config_manager.get_persona_config(selected_persona_config)
@@ -384,7 +393,12 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
     with col_header_1:
          # Select Persona Type to Edit
         available_types = config_manager.get_persona_types()
-        selected_type_for_editor = st.selectbox("Select Persona Type Template to Edit", available_types, key="editor_type_select")
+        selected_type_for_editor = st.selectbox(
+            "Select Persona Type Template to Edit", 
+            available_types, 
+            index=available_types.index(st.session_state.get("editor_type_select", available_types[0])) if st.session_state.get("editor_type_select") in available_types else 0,
+            key="editor_type_select"
+        )
     
     with col_header_2:
         st.write("") # Vertical spacer
