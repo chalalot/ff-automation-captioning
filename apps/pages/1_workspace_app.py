@@ -87,6 +87,31 @@ if selected_preset != "Select..." and st.sidebar.button("Load Selected Preset"):
     if config_data:
         st.session_state.loaded_config = config_data
         st.session_state.preset_loaded = True
+        
+        # Explicitly map loaded values to widget keys so they update immediately
+        if "kol_persona" in config_data:
+            st.session_state.input_kol_persona = config_data["kol_persona"]
+        if "vision_model_choice" in config_data:
+            st.session_state.input_vision_model = config_data["vision_model_choice"]
+        if "limit_choice" in config_data:
+            st.session_state.input_limit = int(config_data["limit_choice"])
+        if "variation_count" in config_data:
+            st.session_state.input_variation = int(config_data["variation_count"])
+        if "strength_model" in config_data:
+            st.session_state.input_strength = float(config_data["strength_model"])
+        if "width" in config_data:
+            st.session_state.input_width = str(config_data["width"])
+        if "height" in config_data:
+            st.session_state.input_height = str(config_data["height"])
+        if "seed_strategy" in config_data:
+            st.session_state.input_seed_strategy = config_data["seed_strategy"]
+        if "base_seed" in config_data:
+            st.session_state.input_base_seed = int(config_data["base_seed"])
+            
+        persona = config_data.get("kol_persona", "")
+        if "lora_name_override" in config_data and persona:
+            st.session_state[f"lora_turbo_{persona}"] = config_data["lora_name_override"]
+
         st.success(f"Loaded '{selected_preset}'")
         time.sleep(0.5)
         st.rerun()
@@ -126,10 +151,7 @@ kol_persona_idx = available_personas.index(default_persona)
 kol_persona = st.sidebar.selectbox("KOL Persona", available_personas, index=kol_persona_idx, key="input_kol_persona")
 
 # 2. Workflow
-wf_options = ["Turbo"]
-default_wf = get_default("workflow_choice", "Turbo")
-if default_wf not in wf_options: default_wf = "Turbo"
-workflow_choice = st.sidebar.selectbox("Workflow Type", wf_options, index=wf_options.index(default_wf), key="input_workflow_choice")
+workflow_choice = "Turbo"
 
 # 3. Vision Model
 vm_options = [
@@ -167,16 +189,34 @@ strength_model = st.sidebar.slider("Model Strength", min_value=0.0, max_value=2.
 st.sidebar.subheader("LoRA Configuration")
 lora_name_override = None
 
+LORA_OPTIONS = [
+    "khiemle__xz-comfy__jennie_turbo_v4.safetensors",
+    "khiemle__xz-comfy__jennie_turbo_outdoor_v1.safetensors",
+    "khiemle__xz-comfy__jennie_turbo_indoor_v1.safetensors",
+    "khiemle__xz-comfy__jennie_turbo_selfie_v2.safetensors",
+    "khiemle__xz-comfy__sephera_turbo_v6.safetensors",
+    "khiemle__xz-comfy__sephera_turbo_v2_gymer.safetensors",
+    "khiemle__xz-comfy__emi_turbo_v2.safetensors",
+    "khiemle__xz-comfy__roxie_v3.safetensors"
+]
+
 if workflow_choice == "Turbo":
     # Get default from mapping OR preset
     mapped_default = PERSONA_LORA_MAPPING_TURBO.get(kol_persona, "")
     # If preset loaded, check if it has this specific lora value saved
     preset_lora = get_default("lora_name_override", mapped_default) if st.session_state.get("preset_loaded") else mapped_default
     
-    # Display input
-    lora_name_override = st.sidebar.text_input(
+    # Add preset_lora to options if it's not already there (fallback for old presets)
+    if preset_lora and preset_lora not in LORA_OPTIONS:
+        LORA_OPTIONS.insert(0, preset_lora)
+        
+    lora_index = LORA_OPTIONS.index(preset_lora) if preset_lora in LORA_OPTIONS else 0
+    
+    # Display selectbox
+    lora_name_override = st.sidebar.selectbox(
         "LoRA Name", 
-        value=preset_lora, 
+        options=LORA_OPTIONS,
+        index=lora_index, 
         key=f"lora_turbo_{kol_persona}"
     )
 

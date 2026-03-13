@@ -60,7 +60,7 @@ COMFYUI_MAX_RETRIES = GlobalConfig.COMFYUI_MAX_RETRIES
 
 # Persona mappings
 PERSONA_LORA_MAPPING_TURBO = {
-    "Jennie": "khiemle__xz-comfy__emi_turbo_v2.safetensors",
+    "Jennie": "khiemle__xz-comfy__jennie_turbo_v4.safetensors",
     "Sephera": "khiemle__xz-comfy__sephera_turbo_v6.safetensors",
     "Nya": "khiemle__xz-comfy__nya_turbo_v1.safetensors",
     "Emi": "khiemle__xz-comfy__emi_turbo_v2.safetensors",
