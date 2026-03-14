@@ -153,7 +153,7 @@ class ImageToPromptWorkflow:
             llm=llm
         )
 
-    async def process(self, image_path: str, persona_name: str = "Jennie", workflow_type: str = "turbo", vision_model: str = "gpt-4o", variation_count: int = 1) -> Dict[str, Any]:
+    async def process(self, image_path: str, persona_name: str = "Jennie", workflow_type: str = "turbo", vision_model: str = "gpt-4o", variation_count: int = 1, clip_model_type: str = "sd3") -> Dict[str, Any]:
         """
         Run the workflow for a single image.
         

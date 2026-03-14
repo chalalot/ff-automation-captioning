@@ -87,6 +87,7 @@ if "input_kol_persona" not in st.session_state:
     for key, st_key, default in [
         ("kol_persona", "input_kol_persona", "Jennie"),
         ("vision_model_choice", "input_vision_model", "ChatGPT (gpt-4o)"),
+        ("clip_model_type", "input_clip_model_type", "sd3"),
         ("limit_choice", "input_limit", 10),
         ("variation_count", "input_variation", 1),
         ("strength_model", "input_strength", 0.8),
@@ -125,6 +126,8 @@ def handle_load_preset():
                 st.session_state.input_kol_persona = config_data["kol_persona"]
             if "vision_model_choice" in config_data:
                 st.session_state.input_vision_model = config_data["vision_model_choice"]
+            if "clip_model_type" in config_data:
+                st.session_state.input_clip_model_type = config_data["clip_model_type"]
             if "limit_choice" in config_data:
                 st.session_state.input_limit = int(config_data["limit_choice"])
             if "variation_count" in config_data:
@@ -163,6 +166,7 @@ def handle_save_preset(name):
         "kol_persona": persona_val,
         "workflow_choice": "Turbo",
         "vision_model_choice": st.session_state.get("input_vision_model", "ChatGPT (gpt-4o)"),
+        "clip_model_type": st.session_state.get("input_clip_model_type", "sd3"),
         "limit_choice": st.session_state.get("input_limit", 10),
         "variation_count": st.session_state.get("input_variation", 1),
         "strength_model": st.session_state.get("input_strength", 0.8),
@@ -228,7 +232,20 @@ if "Grok" in vision_model_choice:
 elif "gemini-3-flash" in vision_model_choice:
     vision_model = "gemini-3-flash-preview"
 
-# 4. Limits & Strength
+# 4. CLIP Model Type
+clip_types = [
+    "stable_diffusion", "stable_cascade", "sd3", "stable_audio", "mochi", 
+    "ltxv", "pixart", "cosmos", "lumina2", "wan", "hidream", "chroma", 
+    "ace", "omnigen2", "qwen_image", "hunyuan_image", "flux2", "ovis", "longcat_image"
+]
+clip_model_type = st.sidebar.selectbox(
+    "CLIP Model Type",
+    clip_types,
+    index=clip_types.index(st.session_state.get("input_clip_model_type", "sd3")) if st.session_state.get("input_clip_model_type", "sd3") in clip_types else 2,
+    key="input_clip_model_type"
+)
+
+# 5. Limits & Strength
 limit_choice = st.sidebar.number_input("Batch Limit", min_value=1, max_value=1000, value=int(st.session_state.get("input_limit", 10)), key="input_limit")
 variation_count = st.sidebar.number_input("Variations per Image", min_value=1, max_value=5, value=int(st.session_state.get("input_variation", 1)), help="Number of different prompts to generate from each image analysis.", key="input_variation")
 strength_model = st.sidebar.slider("Model Strength", min_value=0.0, max_value=2.0, value=float(st.session_state.get("input_strength", 0.8)), step=0.1, key="input_strength")
@@ -294,6 +311,7 @@ sticky_config = {
     "kol_persona": sticky_persona,
     "workflow_choice": "Turbo",
     "vision_model_choice": st.session_state.get("input_vision_model", vision_model_choice),
+    "clip_model_type": st.session_state.get("input_clip_model_type", clip_model_type),
     "limit_choice": st.session_state.get("input_limit", limit_choice),
     "variation_count": st.session_state.get("input_variation", variation_count),
     "strength_model": st.session_state.get("input_strength", strength_model),
@@ -573,7 +591,8 @@ with st.expander("⚙️ Workflow Configuration Studio", expanded=False):
                             image_path=temp_path,
                             persona_name=kol_persona,
                             workflow_type="turbo",
-                            vision_model=vision_model
+                            vision_model=vision_model,
+                            clip_model_type=clip_model_type
                         ))
                     
                     generated_prompt = result.get('generated_prompt', "No prompt generated.")
@@ -786,7 +805,8 @@ with col1:
                     height=height,
                     vision_model=vision_model,
                     lora_name=lora_name_override,
-                    variation_count=variation_count
+                    variation_count=variation_count,
+                    clip_model_type=clip_model_type
                 ))
                 
                 if not queued_task_ids:

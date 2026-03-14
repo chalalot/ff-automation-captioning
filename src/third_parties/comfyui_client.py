@@ -211,6 +211,7 @@ class ComfyUIClient:
         base_seed: int = 0,
         width: str = "1024",
         height: str = "1600",
+        clip_model_type: str = "sd3",
         **kwargs
     ) -> str:
         """
@@ -248,6 +249,9 @@ class ComfyUIClient:
             raise ComfyUIAPIError(f"Failed to load workflow.json: {e}")
             
         # Inject overrides into workflow
+        if "39" in workflow_data and "inputs" in workflow_data["39"]:
+            workflow_data["39"]["inputs"]["type"] = clip_model_type
+
         if "45" in workflow_data and "inputs" in workflow_data["45"]:
             workflow_data["45"]["inputs"]["text"] = cleaned_prompt
         if "53" in workflow_data and "inputs" in workflow_data["53"]:

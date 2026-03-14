@@ -17,7 +17,7 @@ from tasks import process_image_task
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("ProcessAndQueue")
 
-async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callback=None, strength_model=None, seed_strategy="random", base_seed=0, width="1024", height="1600", vision_model="gpt-4o", lora_name=None, variation_count=1):
+async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callback=None, strength_model=None, seed_strategy="random", base_seed=0, width="1024", height="1600", vision_model="gpt-4o", lora_name=None, variation_count=1, clip_model_type="sd3"):
     """
     Main processing loop:
     1. Scans INPUT_DIR for images.
@@ -97,7 +97,8 @@ async def main(persona="Jennie", workflow_type="turbo", limit=10, progress_callb
                 base_seed=base_seed,
                 width=width,
                 height=height,
-                lora_name=lora_name
+                lora_name=lora_name,
+                clip_model_type=clip_model_type
             )
             
             logger.info(f"Queued Celery Task ID: {task.id} for {new_filename}")
@@ -126,6 +127,7 @@ if __name__ == "__main__":
     parser.add_argument("--vision_model", default="gpt-4o", help="Vision model (gpt-4o/grok-4-1-fast-non-reasoning)")
     parser.add_argument("--lora_name", default=None, help="LoRA name override for Turbo")
     parser.add_argument("--variation_count", type=int, default=1, help="Number of prompt variations per image")
+    parser.add_argument("--clip_model_type", type=str, default="sd3", help="Type of CLIP model to use")
     args = parser.parse_args()
     
-    asyncio.run(main(persona=args.persona, workflow_type=args.workflow, limit=args.limit, strength_model=args.strength_model, seed_strategy=args.seed_strategy, base_seed=args.base_seed, width=args.width, height=args.height, vision_model=args.vision_model, lora_name=args.lora_name, variation_count=args.variation_count))
+    asyncio.run(main(persona=args.persona, workflow_type=args.workflow, limit=args.limit, strength_model=args.strength_model, seed_strategy=args.seed_strategy, base_seed=args.base_seed, width=args.width, height=args.height, vision_model=args.vision_model, lora_name=args.lora_name, variation_count=args.variation_count, clip_model_type=args.clip_model_type))
