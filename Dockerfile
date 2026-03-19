@@ -7,6 +7,9 @@ WORKDIR /app
 # Disable CrewAI Telemetry to prevent SIGTERM errors in threads
 ENV CREWAI_TELEMETRY_OPT_OUT=true
 
+# Install system dependencies
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+
 # 3. Copy only requirements first (this optimizes build speed)
 COPY requirements.txt .
 

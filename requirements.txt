@@ -23,3 +23,4 @@ redis
 flower
 
 
+pydub==0.25.1

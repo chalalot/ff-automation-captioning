@@ -1056,6 +1056,8 @@ with tab_gallery:
                     st.caption(video_filename)
                     st.video(video_path)
 
+from src.utils.audio_utils import get_audio_duration, trim_audio
+
 # --- Song Producer Tab ---
 with tab_song_producer:
     st.subheader("🎵 Song Producer")
@@ -1068,16 +1070,50 @@ with tab_song_producer:
         # Save temp file
         temp_dir = os.path.join(INPUT_DIR, "temp_audio")
         os.makedirs(temp_dir, exist_ok=True)
-        song_path = os.path.join(temp_dir, uploaded_song.name)
+        original_song_path = os.path.join(temp_dir, uploaded_song.name)
         
         # Save to disk
-        with open(song_path, "wb") as f:
+        with open(original_song_path, "wb") as f:
             f.write(uploaded_song.getbuffer())
             
         st.success(f"File uploaded: {uploaded_song.name}")
-        st.audio(song_path)
+        
+        # Audio Trimmer
+        st.markdown("### ✂️ Trim Audio Sample")
+        duration = get_audio_duration(original_song_path)
+        
+        if duration > 0:
+            st.write(f"Total Duration: {duration:.1f} seconds")
+            
+            c_trim1, c_trim2 = st.columns(2)
+            with c_trim1:
+                start_time = st.number_input("Start Time (s)", min_value=0.0, max_value=duration, value=0.0, step=1.0)
+            with c_trim2:
+                end_time = st.number_input("End Time (s)", min_value=0.0, max_value=duration, value=min(30.0, duration), step=1.0)
+                
+            if start_time >= end_time:
+                st.warning("Start time must be less than end time.")
+            
+            trimmed_song_path = os.path.join(temp_dir, f"trimmed_{uploaded_song.name}")
+            
+            if st.button("✂️ Trim & Preview"):
+                with st.spinner("Trimming audio..."):
+                    trimmed_file, error_msg = trim_audio(original_song_path, trimmed_song_path, start_time, end_time)
+                    if trimmed_file:
+                        st.session_state.current_song_path = trimmed_file
+                        st.success(f"Trimmed from {start_time}s to {end_time}s")
+                    else:
+                        st.error(f"Error trimming audio: {error_msg}")
+        
+        # Set default path
+        if "current_song_path" not in st.session_state or st.session_state.get("last_uploaded") != uploaded_song.name:
+            st.session_state.current_song_path = original_song_path
+            st.session_state.last_uploaded = uploaded_song.name
+            
+        st.audio(st.session_state.current_song_path)
         
         if st.button("🚀 Analyze & Produce"):
+            song_path = st.session_state.current_song_path
             with st.status("Processing Song...", expanded=True) as status:
                 
                 # 1. Upload to GCS
@@ -1120,8 +1156,15 @@ with tab_song_producer:
                     st.stop()
                 
                 status.update(label="Processing Complete!", state="complete", expanded=False)
+                
+                st.session_state.song_analysis_result = result
+                st.session_state.song_public_url = public_url
             
-            # --- Display Results ---
+        # --- Display Results ---
+        if "song_analysis_result" in st.session_state and "song_public_url" in st.session_state:
+            result = st.session_state.song_analysis_result
+            public_url = st.session_state.song_public_url
+            
             st.divider()
             
             c1, c2 = st.columns(2)
@@ -1136,3 +1179,24 @@ with tab_song_producer:
             with c2:
                 st.markdown("### 📝 Full Lyrics")
                 st.text_area("Lyrics", value=result.get("lyrics", "No lyrics detected."), height=600)
+
+            st.divider()
+            st.markdown("### 🤖 Send to n8n Automation")
+            if st.button("Send to n8n"):
+                webhook_url = "https://autoai9.app.n8n.cloud/webhook/1b3d0263-c8fa-47b8-b300-4e8bb402c591"
+                payload = {
+                    "assets": {
+                        "audio_sample_url": public_url
+                    },
+                    "metadata": {
+                        "audio_prompt": result.get("lyrics", "")
+                    }
+                }
+                
+                try:
+                    with st.spinner("Sending to n8n..."):
+                        response = requests.post(webhook_url, json=payload)
+                        response.raise_for_status()
+                    st.success("Successfully sent to n8n automation!")
+                except requests.exceptions.RequestException as e:
+                    st.error(f"Failed to send to n8n: {e}")
