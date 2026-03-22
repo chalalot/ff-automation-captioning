@@ -376,14 +376,21 @@ def view_gallery_fragment(files_data, total_items, current_tab, context_dir, gro
     paginated_items = get_paginated_items(context_dir, files_data, start_idx, end_idx)
 
     # --- Bulk Download for Approved Tab ---
-    if current_tab == 'approved' and paginated_items:
-        with st.expander("📥 Download Current Page Images (By Date)", expanded=False):
-            # Group items by date
+    if current_tab == 'approved' and files_data:
+        with st.expander("📥 Download All Approved Images (By Date)", expanded=False):
+            # Group ALL items by date, not just paginated
             date_groups = {}
-            for item in paginated_items:
-                d = item['date']
+            for filename, mtime in files_data:
+                dt = datetime.fromtimestamp(mtime)
+                d = dt.strftime("%Y-%m-%d")
                 if d not in date_groups: date_groups[d] = []
-                date_groups[d].append(item)
+                
+                # Build minimal item representation needed for zip
+                full_path = os.path.join(context_dir, filename)
+                date_groups[d].append({
+                    "filename": filename,
+                    "path": full_path,
+                })
             
             # Show download buttons for each date
             cols = st.columns(3)
