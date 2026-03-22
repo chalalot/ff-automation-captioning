@@ -62,8 +62,8 @@ class VisionTool(BaseTool):
                 return "Error: GEMINI_API_KEY not found in environment variables."
             
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=api_key)
+                from google import genai
+                client = genai.Client(api_key=api_key)
                 
                 logger.info(f"[VisionTool] Using Gemini API with model {self.model_name}")
                 
@@ -74,13 +74,15 @@ class VisionTool(BaseTool):
                 
                 logger.info("[VisionTool] Loading image for Gemini...")
                 img = PIL.Image.open(image_path)
-                model = genai.GenerativeModel(self.model_name)
                 
                 logger.info(f"[VisionTool] Sending request to Gemini ({self.model_name})...")
-                response = model.generate_content([prompt, img])
+                response = client.models.generate_content(
+                    model=self.model_name,
+                    contents=[prompt, img]
+                )
                 return response.text
             except ImportError:
-                 return "Error: google-generativeai library not installed."
+                 return "Error: google-genai library not installed."
             except Exception as e:
                  return f"Error processing image with Gemini: {str(e)}"
 

@@ -37,36 +37,37 @@ class AudioTool(BaseTool):
             return "Error: GEMINI_API_KEY not found in environment variables."
 
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)
+            from google import genai
+            client = genai.Client(api_key=api_key)
             
             logger.info(f"[AudioTool] Uploading file to Gemini...")
             # Upload the file
-            audio_file = genai.upload_file(path=audio_path)
+            audio_file = client.files.upload(file=audio_path)
             
             # Wait for processing (usually fast for audio, but good practice)
-            while audio_file.state.name == "PROCESSING":
+            while audio_file.state == "PROCESSING":
                 time.sleep(1)
-                audio_file = genai.get_file(audio_file.name)
+                audio_file = client.files.get(name=audio_file.name)
                 
-            if audio_file.state.name == "FAILED":
+            if audio_file.state == "FAILED":
                 return "Error: Gemini failed to process the audio file."
 
             logger.info(f"[AudioTool] File uploaded: {audio_file.uri}")
             
-            model = genai.GenerativeModel(self.model_name)
-            
             logger.info(f"[AudioTool] Generating content...")
-            response = model.generate_content([prompt, audio_file])
+            response = client.models.generate_content(
+                model=self.model_name,
+                contents=[prompt, audio_file]
+            )
             
             # Cleanup? Gemini files persist for 48h. We might want to delete if possible, 
             # but for now let's leave it or check if delete_file exists.
-            # genai.delete_file(audio_file.name) 
+            # client.files.delete(name=audio_file.name) 
             
             return response.text
             
         except ImportError:
-            return "Error: google-generativeai library not installed."
+            return "Error: google-genai library not installed."
         except Exception as e:
             logger.error(f"[AudioTool] Error: {e}")
             return f"Error processing audio with Gemini: {str(e)}"
