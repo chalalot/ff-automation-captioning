@@ -261,7 +261,9 @@ LORA_OPTIONS = [
     "khiemle__xz-comfy__sephera_turbo_v6.safetensors",
     "khiemle__xz-comfy__sephera_turbo_v2_gymer.safetensors",
     "khiemle__xz-comfy__emi_turbo_v2.safetensors",
-    "khiemle__xz-comfy__roxie_v3.safetensors"
+    "khiemle__xz-comfy__roxie_v3.safetensors",
+    "khiemle__xz-comfy__roxie_v4_000001250.safetensors",
+    "khiemle__xz-comfy__Sephera%20v7.safetensors",
 ]
 
 # Ensure the dynamically expected LoRA key exists when changing Persona
