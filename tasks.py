@@ -70,13 +70,34 @@ async def async_process_image(dest_image_path, persona, workflow_type, vision_mo
     logger.info(f"Generating {variation_count} prompt(s) for {dest_image_path}...")
     task.update_state(state='GENERATING_PROMPT', meta={'status': f"🤖 CrewAI analyzing image and writing {variation_count} prompt(s)...", 'progress': 40})
     
-    result = await workflow.process(
-        image_path=dest_image_path,
-        persona_name=persona,
-        workflow_type=workflow_type,
-        vision_model=vision_model,
-        variation_count=variation_count
-    )
+    try:
+        result = await workflow.process(
+            image_path=dest_image_path,
+            persona_name=persona,
+            workflow_type=workflow_type,
+            vision_model=vision_model,
+            variation_count=variation_count
+        )
+    except ValueError as e:
+        error_msg = str(e)
+        if "Invalid response from LLM call - None or empty" in error_msg:
+            formatted_error = (
+                "Agent Generation Failed: The AI returned an empty response.\n"
+                "Possible reasons:\n"
+                "1) API Rate Limits or Timeouts\n"
+                "2) Safety/Moderation filters blocked the image or description\n"
+                "3) Context length limits exceeded\n"
+                "Check Celery logs for deep raw LLM responses (enable verbose mode)."
+            )
+            task.update_state(state='FAILURE', meta={'status': f"❌ {formatted_error}", 'progress': 0})
+            logger.error(formatted_error)
+            raise ValueError(formatted_error) from e
+        else:
+            task.update_state(state='FAILURE', meta={'status': f"❌ Error: {error_msg}", 'progress': 0})
+            raise e
+    except Exception as e:
+        task.update_state(state='FAILURE', meta={'status': f"❌ Workflow Error: {str(e)}", 'progress': 0})
+        raise e
     
     prompts = result.get('generated_prompts', [result.get('generated_prompt')])
     successful_queues_for_image = 0

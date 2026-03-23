@@ -14,7 +14,9 @@ from src.database.image_logs_storage import ImageLogsStorage
 from src.third_parties.gcs_client import upload_image_to_gcs
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+DEBUG_DB_POLLING = os.getenv("DEBUG_DB_POLLING", "false").lower() == "true"
+log_level = logging.INFO if DEBUG_DB_POLLING else logging.WARNING
+logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("PopulateImages")
 
 async def main():
@@ -29,10 +31,12 @@ async def main():
     pending_items = storage.get_pending_executions()
     
     if not pending_items:
-        logger.info("No pending executions found in database.")
+        if DEBUG_DB_POLLING:
+            logger.info("No pending executions found in database.")
         return
 
-    logger.info(f"Checking {len(pending_items)} pending executions...")
+    if DEBUG_DB_POLLING:
+        logger.info(f"Checking {len(pending_items)} pending executions...")
     
     for item in pending_items:
         execution_id = item['execution_id']

@@ -38,8 +38,16 @@ class ImageToPromptWorkflow:
             import litellm
             
             litellm.telemetry = False
-            litellm.turn_off_message_logging = True 
-            litellm.suppress_debug_info = True
+            
+            # Conditionally enable deep litellm debugging if workflow is verbose
+            if self.verbose:
+                litellm.set_verbose = True
+                litellm.turn_off_message_logging = False
+                litellm.suppress_debug_info = False
+            else:
+                litellm.turn_off_message_logging = True 
+                litellm.suppress_debug_info = True
+                
             litellm.success_callback = []
             litellm.failure_callback = []
             
